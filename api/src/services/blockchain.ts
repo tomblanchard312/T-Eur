@@ -1,4 +1,3 @@
-// @ts-nocheck - Disable strict checks for contract initialization
 import { ethers, Contract, JsonRpcProvider, Wallet } from 'ethers';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
