@@ -16,6 +16,7 @@ import walletsRouter from './routes/wallets.js';
 import transfersRouter from './routes/transfers.js';
 import paymentsRouter from './routes/payments.js';
 import adminRouter from './routes/admin.js';
+import fraudRouter from './routes/fraud.js';
 
 const app = express();
 
@@ -168,6 +169,7 @@ apiRouter.use('/wallets', walletsRouter);
 apiRouter.use('/transfers', transfersRouter);
 apiRouter.use('/payments', paymentsRouter);
 apiRouter.use('/admin', adminRouter);
+apiRouter.use('/fraud', fraudRouter);
 
 app.use('/api/v1', apiRouter);
 
