@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Reconciliation Batch",
+  "type": "object",
+  "properties": {
+    "device_id": { "type": "string" },
+    "wallet_id": { "type": "string" },
+    "transactions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sequence_number": { "type": "integer" },
+          "amount": { "type": "integer" },
+          "signature": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        },
+        "required": ["sequence_number","amount","signature"]
+      }
+    }
+  },
+  "required": ["device_id","wallet_id","transactions"]
+}

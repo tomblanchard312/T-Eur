@@ -1,0 +1,10 @@
+{
+  "name": "reconciliation-ref",
+  "version": "0.1.0",
+  "description": "Minimal reference reconciliation processor (lab-only)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "tEUR Parameters Manifest",
+  "type": "object",
+  "properties": {
+    "holding_limit_individual": { "type": "integer", "description": "Max cents an individual may hold" },
+    "holding_limit_merchant": { "type": "integer", "description": "Max cents a merchant may hold" },
+    "offline_cap_per_device": { "type": "integer", "description": "Max cents a single offline device may authorise before reconciliation" },
+    "transfer_velocity_limit_window_seconds": { "type": "integer" },
+    "transfer_velocity_limit_max_amount": { "type": "integer" },
+    "fee_transfer_basis_points": { "type": "integer" },
+    "governance_change_delay_seconds": { "type": "integer" },
+    "offline_reconciliation_window_seconds": { "type": "integer" },
+    "offline_daily_velocity_per_wallet": { "type": "integer" }
+  },
+  "required": ["holding_limit_individual","holding_limit_merchant","fee_transfer_basis_points"]
+}
