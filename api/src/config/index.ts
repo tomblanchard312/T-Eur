@@ -86,3 +86,6 @@ function loadConfig() {
 
 export const config = loadConfig();
 export type Config = z.infer<typeof configSchema>;
+
+// Re-export parameters manifest (loaded from JSON manifest in envs/ or via PARAMETERS_FILE)
+export { parameters as rulebookParameters } from './parameters';

@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import swaggerUi from 'swagger-ui-express';
 import { config } from './config/index.js';
+import { rulebookParameters } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { errorHandler } from './middleware/errors.js';
 import { requestId, requestLogger, standardRateLimiter } from './middleware/common.js';
@@ -200,6 +201,12 @@ async function start() {
         env: config.nodeEnv,
         docsUrl: `http://localhost:${config.port}/api/docs`,
       });
+      // Log loaded parameters for visibility in lab/dev only
+      try {
+        logger.info('Loaded rulebook parameters', { parameters: rulebookParameters });
+      } catch (e) {
+        logger.warn('Rulebook parameters not available', { error: e });
+      }
     });
   } catch (error) {
     logger.error('Failed to start server', { error });
