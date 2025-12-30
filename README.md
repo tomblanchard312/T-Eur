@@ -5,30 +5,60 @@ Sovereign EU financial infrastructure for the Tokenized Euro.
 ## Overview
 
 tEUR is a digital euro settlement system designed for:
+
 - Sovereign EU deployment
 - Multi-zone resilience
 - Regulatory compliance
 - Vendor independence
 
+## Documentation Translations
+
+Select a language (flag indicates a representative country):
+
+- 🇧🇬 Bulgarian: [README (BG)](docs/readmes/README.bg.md)
+- 🇭🇷 Croatian: [README (HR)](docs/readmes/README.hr.md)
+- 🇨🇿 Czech: [README (CS)](docs/readmes/README.cs.md)
+- 🇩🇰 Danish: [README (DA)](docs/readmes/README.da.md)
+- 🇳🇱 Dutch: [README (NL)](docs/readmes/README.nl.md)
+- 🇪🇺 English: [README (EN)](docs/readmes/README.en.md)
+- 🇪🇪 Estonian: [README (ET)](docs/readmes/README.et.md)
+- 🇫🇮 Finnish: [README (FI)](docs/readmes/README.fi.md)
+- 🇫🇷 French: [README (FR)](docs/readmes/README.fr.md)
+- 🇩🇪 German: [README (DE)](docs/readmes/README.de.md)
+- 🇬🇷 Greek: [README (EL)](docs/readmes/README.el.md)
+- 🇭🇺 Hungarian: [README (HU)](docs/readmes/README.hu.md)
+- 🇮🇪 Irish: [README (GA)](docs/readmes/README.ga.md)
+- 🇮🇹 Italian: [README (IT)](docs/readmes/README.it.md)
+- 🇱🇻 Latvian: [README (LV)](docs/readmes/README.lv.md)
+- 🇱🇹 Lithuanian: [README (LT)](docs/readmes/README.lt.md)
+- 🇲🇹 Maltese: [README (MT)](docs/readmes/README.mt.md)
+- 🇵🇱 Polish: [README (PL)](docs/readmes/README.pl.md)
+- 🇵🇹 Portuguese: [README (PT)](docs/readmes/README.pt.md)
+- 🇷🇴 Romanian: [README (RO)](docs/readmes/README.ro.md)
+- 🇸🇰 Slovak: [README (SK)](docs/readmes/README.sk.md)
+- 🇸🇮 Slovenian: [README (SL)](docs/readmes/README.sl.md)
+- 🇪🇸 Spanish: [README (ES)](docs/readmes/README.es.md)
+- 🇸🇪 Swedish: [README (SV)](docs/readmes/README.sv.md)
+
 ## Token Specification
 
-| Property | Value |
-|----------|-------|
-| Name | Tokenized Euro |
-| Symbol | `tEUR` |
-| Decimals | 2 |
-| Backing | 1:1 EUR reserves |
+| Property | Value            |
+| -------- | ---------------- |
+| Name     | Tokenized Euro   |
+| Symbol   | `tEUR`           |
+| Decimals | 2                |
+| Backing  | 1:1 EUR reserves |
 
 ## Architecture
 
 ### Trust Zones
 
-| Zone Type | Prefix | Description |
-|-----------|--------|-------------|
-| ECB Core | `ecb-core` | Central settlement authority |
-| National Central Bank | `ncb-<country>` | National node (e.g., `ncb-de`) |
-| Commercial Bank | `bank-<country>` | Commercial participant |
-| PSP | `psp-<region>` | Payment service provider |
+| Zone Type             | Prefix           | Description                    |
+| --------------------- | ---------------- | ------------------------------ |
+| ECB Core              | `ecb-core`       | Central settlement authority   |
+| National Central Bank | `ncb-<country>`  | National node (e.g., `ncb-de`) |
+| Commercial Bank       | `bank-<country>` | Commercial participant         |
+| PSP                   | `psp-<region>`   | Payment service provider       |
 
 ### DNS Realms
 
@@ -59,12 +89,12 @@ tEUR is a digital euro settlement system designed for:
 
 ## Environments
 
-| Environment | Name | Purpose |
-|-------------|------|---------|
-| Local Lab | `lab` | Single or multi-node development |
-| Integration | `int` | Controlled shared testing |
-| Staging | `stg` | Pre-production validation |
-| Production | `prd` | Sovereign production |
+| Environment | Name  | Purpose                          |
+| ----------- | ----- | -------------------------------- |
+| Local Lab   | `lab` | Single or multi-node development |
+| Integration | `int` | Controlled shared testing        |
+| Staging     | `stg` | Pre-production validation        |
+| Production  | `prd` | Sovereign production             |
 
 ## Getting Started
 
@@ -86,6 +116,7 @@ terraform apply
 ## Naming Conventions
 
 All names must be:
+
 - Lowercase
 - Hyphen-separated
 - ASCII only
