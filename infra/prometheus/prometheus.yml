@@ -1,0 +1,49 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'teur-ecb-core'
+    environment: 'production'
+
+scrape_configs:
+  # tEUR API metrics
+  - job_name: 'teur-api'
+    static_configs:
+      - targets: ['teur-api:3000']
+    metrics_path: '/metrics'
+
+  # Besu blockchain metrics
+  - job_name: 'besu'
+    static_configs:
+      - targets: ['besu-ecb-core:9545']
+    metrics_path: '/metrics'
+
+  # ISO 20022 adapter metrics
+  - job_name: 'iso20022-adapter'
+    static_configs:
+      - targets: ['iso20022-adapter:4000']
+    metrics_path: '/metrics'
+
+  # Node exporter (system metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # PostgreSQL exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+# Alerting rules
+rule_files:
+  - 'alerts.yml'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']

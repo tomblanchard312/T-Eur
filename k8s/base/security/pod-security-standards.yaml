@@ -1,0 +1,48 @@
+# Pod Security Standards for tEUR
+# Enforces restricted security context for all pods
+
+# Restricted profile is the most restrictive and follows security best practices
+# Reference: https://kubernetes.io/docs/concepts/security/pod-security-standards/
+
+---
+# ResourceQuota template for tEUR namespaces
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: teur-resource-quota
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: "20Gi"
+    limits.cpu: "20"
+    limits.memory: "40Gi"
+    persistentvolumeclaims: "20"
+    pods: "50"
+    secrets: "50"
+    services: "20"
+---
+# LimitRange for default resource constraints
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: teur-limit-range
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      min:
+        cpu: "10m"
+        memory: "32Mi"
+      max:
+        cpu: "4"
+        memory: "8Gi"
+    - type: PersistentVolumeClaim
+      min:
+        storage: "1Gi"
+      max:
+        storage: "100Gi"

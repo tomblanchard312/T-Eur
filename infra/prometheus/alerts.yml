@@ -1,0 +1,113 @@
+groups:
+  - name: teur_alerts
+    interval: 30s
+    rules:
+      # API Health
+      - alert: APIDown
+        expr: up{job="teur-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "tEUR API is down"
+          description: "tEUR API has been down for more than 1 minute"
+
+      # Blockchain Health
+      - alert: BesuNodeDown
+        expr: up{job="besu"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: blockchain
+        annotations:
+          summary: "Besu blockchain node is down"
+          description: "Besu node has been unreachable for more than 2 minutes"
+
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} over last 5 minutes"
+
+      # Transaction Failures
+      - alert: HighTransactionFailureRate
+        expr: rate(teur_transactions_failed_total[5m]) / rate(teur_transactions_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: blockchain
+        annotations:
+          summary: "High transaction failure rate"
+          description: "{{ $value | humanizePercentage }} of transactions are failing"
+
+      # Holding Limit Violations
+      - alert: HoldingLimitViolations
+        expr: increase(teur_holding_limit_violations_total[1h]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: compliance
+        annotations:
+          summary: "Frequent holding limit violations"
+          description: "{{ $value }} holding limit violations in the last hour"
+
+      # Database Health
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL has been unreachable for more than 1 minute"
+
+      # Disk Space
+      - alert: LowDiskSpace
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Low disk space"
+          description: "Only {{ $value | humanizePercentage }} disk space remaining"
+
+      # Memory Usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is at {{ $value | humanizePercentage }}"
+
+      # API Response Time
+      - alert: SlowAPIResponses
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "Slow API responses"
+          description: "95th percentile response time is {{ $value }}s"
+
+      # Blockchain Sync
+      - alert: BlockchainNotSyncing
+        expr: increase(besu_blockchain_height[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: blockchain
+        annotations:
+          summary: "Blockchain not syncing"
+          description: "No new blocks in the last 10 minutes"

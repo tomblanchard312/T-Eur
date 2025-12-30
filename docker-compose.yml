@@ -1,0 +1,291 @@
+version: '3.8'
+
+services:
+  # Hyperledger Besu Node (ECB Core)
+  besu-ecb-core:
+    image: hyperledger/besu:24.1.0
+    container_name: teur-besu-ecb-core
+    ports:
+      - "8545:8545"   # JSON-RPC
+      - "8546:8546"   # WebSocket
+      - "30303:30303" # P2P
+    volumes:
+      - besu-ecb-data:/data
+      - ./infra/besu/genesis.json:/config/genesis.json:ro
+      - ./infra/besu/config.toml:/config/config.toml:ro
+    command:
+      - --genesis-file=/config/genesis.json
+      - --config-file=/config/config.toml
+      - --data-path=/data
+      - --rpc-http-enabled
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-port=8545
+      - --rpc-http-cors-origins=*
+      - --rpc-http-api=ETH,NET,WEB3,ADMIN,TXPOOL
+      - --rpc-ws-enabled
+      - --rpc-ws-host=0.0.0.0
+      - --rpc-ws-port=8546
+      - --host-allowlist=*
+      - --p2p-enabled
+      - --p2p-port=30303
+      - --min-gas-price=0
+    networks:
+      - teur-csp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8545"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # tEUR API Gateway
+  teur-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: teur-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BLOCKCHAIN_RPC_URL=http://besu-ecb-core:8545
+      - BLOCKCHAIN_CHAIN_ID=2024
+      - BLOCKCHAIN_OPERATOR_PRIVATE_KEY=${OPERATOR_PRIVATE_KEY}
+      - PERMISSIONING_ADDRESS=${PERMISSIONING_ADDRESS}
+      - WALLET_REGISTRY_ADDRESS=${WALLET_REGISTRY_ADDRESS}
+      - TOKEN_ADDRESS=${TOKEN_ADDRESS}
+      - CONDITIONAL_PAYMENTS_ADDRESS=${CONDITIONAL_PAYMENTS_ADDRESS}
+      - JWT_SECRET=${JWT_SECRET}
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX=100
+      - CORS_ORIGIN=http://localhost:3001
+    depends_on:
+      besu-ecb-core:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - teur-csp
+      - teur-pap
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Admin Dashboard
+  teur-dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: teur-dashboard
+    ports:
+      - "3001:80"
+    environment:
+      - VITE_API_URL=http://localhost:3000/api/v1
+    depends_on:
+      - teur-api
+    networks:
+      - teur-pap
+    restart: unless-stopped
+
+  # ISO 20022 Adapter
+  iso20022-adapter:
+    build:
+      context: ./iso20022-adapter
+      dockerfile: Dockerfile
+    container_name: teur-iso20022
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - TEUR_API_URL=http://teur-api:3000/api/v1
+      - TEUR_API_KEY=${BANK_API_KEY}
+      - BIC_CODE=${BIC_CODE:-TEURDE00XXX}
+      - INSTITUTION_ID=${INSTITUTION_ID:-bank-de-01}
+      - INSTITUTION_NAME=${INSTITUTION_NAME:-tEUR Test Bank}
+    depends_on:
+      teur-api:
+        condition: service_healthy
+    networks:
+      - teur-csp
+    volumes:
+      - iso-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: teur-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=teur
+      - POSTGRES_USER=teur
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - teur-csp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teur"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: teur-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - teur-obs
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: teur-grafana
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - teur-obs
+      - teur-pap
+    restart: unless-stopped
+
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.3
+    container_name: teur-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - teur-obs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.3
+    container_name: teur-logstash
+    ports:
+      - "5000:5000/tcp"
+      - "5000:5000/udp"
+      - "9600:9600"
+    volumes:
+      - ./infra/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./infra/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - teur-obs
+    restart: unless-stopped
+
+  # Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.3
+    container_name: teur-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - teur-obs
+      - teur-pap
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Node Exporter (for system metrics)
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: teur-node-exporter
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - teur-obs
+    restart: unless-stopped
+
+networks:
+  # CSP - Critical Settlement Payments (internal, sovereign)
+  teur-csp:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+  
+  # PAP - Public API & Portal (external facing)
+  teur-pap:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+  
+  # OBS - Observability (monitoring, logging)
+  teur-obs:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16
+
+volumes:
+  besu-ecb-data:
+    driver: local
+  postgres-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  elasticsearch-data:
+    driver: local
+  iso-logs:
+    driver: local

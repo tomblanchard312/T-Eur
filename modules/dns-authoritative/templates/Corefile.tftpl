@@ -1,0 +1,25 @@
+. {
+    health :8080
+    ready :8181
+    prometheus :9153
+    
+    log
+    errors
+}
+
+%{ for zone_name, zone_config in zones ~}
+${zone_name} {
+    log
+    errors
+    
+    # Zone data
+    file /etc/coredns/db.${zone_name} ${zone_name}
+    
+    # DNSSEC signing (when keys are available)
+    # dnssec
+    
+    # Metrics
+    prometheus :9153
+}
+
+%{ endfor ~}

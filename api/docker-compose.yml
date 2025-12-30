@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: teur-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - BLOCKCHAIN_RPC_URL=http://besu:8545
+      - BLOCKCHAIN_CHAIN_ID=31337
+      - BLOCKCHAIN_OPERATOR_PRIVATE_KEY=${OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
+      - CONTRACT_PERMISSIONING=${CONTRACT_PERMISSIONING}
+      - CONTRACT_WALLET_REGISTRY=${CONTRACT_WALLET_REGISTRY}
+      - CONTRACT_TOKENIZED_EURO=${CONTRACT_TOKENIZED_EURO}
+      - CONTRACT_CONDITIONAL_PAYMENTS=${CONTRACT_CONDITIONAL_PAYMENTS}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      - LOG_LEVEL=debug
+      - CORS_ORIGIN=http://localhost:3001
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      besu:
+        condition: service_healthy
+    networks:
+      - teur-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  besu:
+    image: hyperledger/besu:24.1.0
+    container_name: teur-besu
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+    volumes:
+      - besu-data:/var/lib/besu
+      - ../infrastructure/besu/genesis.json:/config/genesis.json:ro
+    command: >
+      --genesis-file=/config/genesis.json
+      --network-id=31337
+      --rpc-http-enabled
+      --rpc-http-host=0.0.0.0
+      --rpc-http-port=8545
+      --rpc-http-cors-origins="*"
+      --rpc-http-api=ETH,NET,WEB3,TXPOOL,DEBUG
+      --rpc-ws-enabled
+      --rpc-ws-host=0.0.0.0
+      --rpc-ws-port=8546
+      --host-allowlist="*"
+      --min-gas-price=0
+      --miner-enabled
+      --miner-coinbase=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+    networks:
+      - teur-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8545"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  teur-network:
+    driver: bridge
+
+volumes:
+  besu-data:
