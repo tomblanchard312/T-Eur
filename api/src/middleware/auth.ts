@@ -27,16 +27,14 @@ interface JwtPayload {
   exp: number;
 }
 
-declare global {
-  namespace Express {
-    interface Request {
-      auth?: {
-        institutionId: string;
-        institutionName: string;
-        roles: string[];
-        permissions: string[];
-      };
-    }
+declare module 'express-serve-static-core' {
+  interface Request {
+    auth?: {
+      institutionId: string;
+      institutionName: string;
+      roles: string[];
+      permissions: string[];
+    };
   }
 }
 

@@ -1,17 +1,20 @@
 import fs from 'fs';
 import path from 'path';
+import { z } from 'zod';
 
-export type Parameters = {
-  holding_limit_individual: number;
-  holding_limit_merchant: number;
-  offline_cap_per_device: number;
-  transfer_velocity_limit_window_seconds: number;
-  transfer_velocity_limit_max_amount: number;
-  fee_transfer_basis_points: number;
-  governance_change_delay_seconds: number;
-  offline_reconciliation_window_seconds: number;
-  offline_daily_velocity_per_wallet: number;
-};
+export const parametersSchema = z.object({
+  holding_limit_individual: z.number().nonnegative(),
+  holding_limit_merchant: z.number().nonnegative(),
+  offline_cap_per_device: z.number().nonnegative(),
+  transfer_velocity_limit_window_seconds: z.number().int().positive(),
+  transfer_velocity_limit_max_amount: z.number().nonnegative(),
+  fee_transfer_basis_points: z.number().nonnegative(),
+  governance_change_delay_seconds: z.number().int().nonnegative(),
+  offline_reconciliation_window_seconds: z.number().int().nonnegative(),
+  offline_daily_velocity_per_wallet: z.number().nonnegative(),
+});
+
+export type Parameters = z.infer<typeof parametersSchema>;
 
 const defaultPath = path.resolve(process.cwd(), 'envs/lab/ecb-core/parameters.json');
 const filePath = process.env['PARAMETERS_FILE'] || defaultPath;
@@ -25,14 +28,15 @@ export function loadParameters(): Parameters {
       throw new Error(`Parameters file not found: ${filePath}`);
     }
     const raw = fs.readFileSync(filePath, 'utf8');
-    const parsed = JSON.parse(raw) as Parameters;
-    // Basic validation
-    if (typeof parsed.holding_limit_individual !== 'number') {
-      throw new Error('Invalid parameters: holding_limit_individual required');
-    }
+    const parsedRaw = JSON.parse(raw);
+    const parsed = parametersSchema.parse(parsedRaw);
     cached = parsed;
     return parsed;
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      const pretty = err.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; ');
+      throw new Error(`Parameters validation failed (${filePath}): ${pretty}`);
+    }
     throw new Error(`Failed to load parameters from ${filePath}: ${err}`);
   }
 }

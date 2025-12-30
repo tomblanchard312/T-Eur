@@ -74,12 +74,16 @@ export function validate<T>(schema: ZodSchema<T>, source: 'body' | 'query' | 'pa
 }
 
 // Global error handler
+// Allow unused `_next` parameter to satisfy Express middleware signature
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function errorHandler(
   err: Error,
   req: Request,
   res: Response,
   _next: NextFunction
 ) {
+  // Mark `_next` as used to satisfy linter while keeping signature
+  void _next;
   const requestId = req.headers['x-request-id'] || 'unknown';
   
   if (err instanceof ApiError) {

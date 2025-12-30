@@ -1,0 +1,74 @@
+name: parameters-and-recon-ci
+
+on:
+  push: {}
+  pull_request: {}
+
+jobs:
+  api-tests:
+    name: Run API tests (parameters schema)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install and run API tests
+        working-directory: api
+        run: |
+          npm ci
+          npm test --if-present
+  recon-smoke:
+    name: Reconciliation reference smoke test
+    runs-on: ubuntu-latest
+    needs: api-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Start reconciliation-ref service
+        working-directory: tools/reconciliation-ref
+        run: |
+          npm ci
+          # Start server in background on default port 8081
+          nohup node index.js > recon.log 2>&1 &
+
+      - name: Wait for recon endpoint
+        run: |
+          for i in {1..15}; do
+            if curl -sS http://localhost:8081/ >/dev/null 2>&1; then
+              echo "recon ready"; break
+            fi
+            sleep 1
+          done
+
+      - name: POST sample reconciliation batch
+        run: |
+          cat > /tmp/sample-batch.json <<'JSON'
+          {
+            "device_id": "device-1",
+            "wallet_id": "wallet-1",
+            "transactions": [
+              {"sequence_number": 1, "amount": 1000, "signature": "sig-1", "timestamp": 1700000000}
+            ]
+          }
+          JSON
+          CURL_OUT=$(curl -sS -w "%{http_code}" -o /tmp/recon_resp.txt -X POST -H "Content-Type: application/json" --data @/tmp/sample-batch.json http://localhost:8081/ingest || true)
+          echo "Response code: $CURL_OUT"
+          cat /tmp/recon_resp.txt || true
+          if [ "$CURL_OUT" != "200" ]; then
+            echo "Reconciliation ingest failed"; exit 1
+          fi
+
+      - name: Stop reconciliation-ref
+        run: |
+          pkill -f "node index.js" || true
