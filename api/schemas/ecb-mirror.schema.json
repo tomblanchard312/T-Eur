@@ -1,0 +1,36 @@
+{
+  "$id": "https://example.com/schemas/ecb-mirror.schema.json",
+  "title": "ECB Mirror Record",
+  "type": "object",
+  "required": ["seriesId", "retrievedAtUtc", "provenance", "rawPayloadBase64", "rawPayloadHash"],
+  "properties": {
+    "seriesId": { "type": "string" },
+    "retrievedAtUtc": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "type": "object",
+      "required": ["sourceUrl"],
+      "properties": {
+        "sourceUrl": { "type": "string", "format": "uri" },
+        "datasetId": { "type": "string" },
+        "seriesKey": { "type": "string" }
+      }
+    },
+    "rawPayloadBase64": { "type": "string" },
+    "rawPayloadHash": {
+      "type": "object",
+      "required": ["algorithm", "hex"],
+      "properties": {
+        "algorithm": { "type": "string", "enum": ["sha256"] },
+        "hex": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "normalized": { "$ref": "ecb-timeseries.schema.json" },
+    "normalizedHash": {
+      "type": "object",
+      "properties": {
+        "algorithm": { "type": "string" },
+        "hex": { "type": "string" }
+      }
+    }
+  }
+}
