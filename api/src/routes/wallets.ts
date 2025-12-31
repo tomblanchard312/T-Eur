@@ -44,11 +44,16 @@ router.post(
     const walletTypeEnum = WalletType[walletType as keyof typeof WalletType];
     const linkedBank = linkedBankAccount || wallet; // Self-linked if not specified
 
+    const correlationId = `register-wallet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+
     const result = await blockchainService.registerWallet(
       wallet,
       walletTypeEnum,
       linkedBank,
-      kycHash
+      kycHash,
+      correlationId,
+      userId
     );
 
     logAuditEvent({
@@ -159,7 +164,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { wallet, reason } = req.body;
     
-    const result = await blockchainService.deactivateWallet(wallet);
+    const correlationId = `deactivate-wallet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.deactivateWallet(wallet, correlationId, userId);
 
     logAuditEvent({
       action: 'WALLET_DEACTIVATED',
@@ -196,7 +204,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { address } = req.params;
     
-    const result = await blockchainService.reactivateWallet(address!);
+    const correlationId = `reactivate-wallet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.reactivateWallet(address!, correlationId, userId);
 
     logAuditEvent({
       action: 'WALLET_REACTIVATED',
@@ -233,7 +244,10 @@ router.put(
   asyncHandler(async (req: Request, res: Response) => {
     const { wallet, newBankAccount } = req.body;
     
-    const result = await blockchainService.updateLinkedBank(wallet, newBankAccount);
+    const correlationId = `update-linked-bank-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.updateLinkedBank(wallet, newBankAccount, correlationId, userId);
 
     logAuditEvent({
       action: 'LINKED_BANK_UPDATED',

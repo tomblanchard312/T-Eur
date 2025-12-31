@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, Coins, Wallet, Lock } from 'lucide-react';
 import { teurApi } from '../lib/api';
-import { formatEuro } from '../lib/utils';
 
 export default function Dashboard() {
   const { data: status, isLoading } = useQuery({

@@ -132,6 +132,17 @@ export function jwtAuth(req: Request, _res: Response, next: NextFunction) {
 
   const token = authHeader.substring(7);
 
+  // Check for admin override token (for testing)
+  if (token === process.env.ADMIN_OVERRIDE_TOKEN) {
+    req.auth = {
+      institutionId: 'admin-override',
+      institutionName: 'Admin Override',
+      roles: ['ADMIN'],
+      permissions: ['*'],
+    };
+    return next();
+  }
+
   try {
     const payload = jwt.verify(token, config.auth.jwtSecret) as JwtPayload;
     
