@@ -147,7 +147,7 @@ router.get(
       action: 'TRANSACTION_AUDIT_TRAIL_QUERIED',
       actor: req.auth!.institutionId,
       resource: 'audit',
-      resourceId: correlationId,
+      ...(correlationId && { resourceId: correlationId }),
       result: 'success',
     });
 

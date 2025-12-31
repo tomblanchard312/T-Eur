@@ -26,22 +26,27 @@ export class AuditService {
       metadata?: Record<string, any>;
     }
   ) {
-    await logAuditEvent(`TRANSACTION_${eventType.toUpperCase()}`, {
-      correlationId,
-      userId,
-      transactionType: transactionDetails.type,
-      amount: transactionDetails.amount,
-      from: transactionDetails.from,
-      to: transactionDetails.to,
-      asset: transactionDetails.asset || 'tEUR',
-      txHash: transactionDetails.txHash,
-      blockNumber: transactionDetails.blockNumber,
-      contract: transactionDetails.contract,
-      method: transactionDetails.method,
-      status: transactionDetails.status,
-      error: transactionDetails.error,
-      metadata: transactionDetails.metadata,
-      timestamp: new Date().toISOString(),
+    logAuditEvent({
+      action: `TRANSACTION_${eventType.toUpperCase()}`,
+      actor: userId || 'system',
+      resource: 'transaction',
+      resourceId: correlationId,
+      details: {
+        transactionType: transactionDetails.type,
+        amount: transactionDetails.amount,
+        from: transactionDetails.from,
+        to: transactionDetails.to,
+        asset: transactionDetails.asset || 'tEUR',
+        txHash: transactionDetails.txHash,
+        blockNumber: transactionDetails.blockNumber,
+        contract: transactionDetails.contract,
+        method: transactionDetails.method,
+        status: transactionDetails.status,
+        error: transactionDetails.error,
+        metadata: transactionDetails.metadata,
+      },
+      result: transactionDetails.status === 'failed' ? 'failure' : 'success',
+      ...(transactionDetails.error && { errorMessage: transactionDetails.error }),
     });
   }
 
@@ -60,15 +65,19 @@ export class AuditService {
       details?: Record<string, any>;
     }
   ) {
-    await logAuditEvent(`COMPLIANCE_${eventType.toUpperCase()}`, {
-      correlationId,
-      userId,
-      regulation: complianceDetails.regulation,
-      requirement: complianceDetails.requirement,
-      checkType: complianceDetails.checkType,
-      result: complianceDetails.result,
-      details: complianceDetails.details,
-      timestamp: new Date().toISOString(),
+    logAuditEvent({
+      action: `COMPLIANCE_${eventType.toUpperCase()}`,
+      actor: userId || 'system',
+      resource: 'compliance',
+      resourceId: correlationId,
+      details: {
+        regulation: complianceDetails.regulation,
+        requirement: complianceDetails.requirement,
+        checkType: complianceDetails.checkType,
+        result: complianceDetails.result,
+        details: complianceDetails.details,
+      },
+      result: complianceDetails.result === 'fail' ? 'failure' : 'success',
     });
   }
 
@@ -86,14 +95,18 @@ export class AuditService {
       details?: Record<string, any>;
     }
   ) {
-    await logAuditEvent(`SECURITY_${eventType.toUpperCase()}`, {
-      correlationId,
-      userId,
-      threatType: securityDetails.threatType,
-      severity: securityDetails.severity,
-      source: securityDetails.source,
-      details: securityDetails.details,
-      timestamp: new Date().toISOString(),
+    logAuditEvent({
+      action: `SECURITY_${eventType.toUpperCase()}`,
+      actor: userId || 'system',
+      resource: 'security',
+      resourceId: correlationId,
+      details: {
+        threatType: securityDetails.threatType,
+        severity: securityDetails.severity,
+        source: securityDetails.source,
+        details: securityDetails.details,
+      },
+      result: securityDetails.severity === 'critical' ? 'failure' : 'success',
     });
   }
 
@@ -112,15 +125,19 @@ export class AuditService {
       details?: Record<string, any>;
     }
   ) {
-    await logAuditEvent(`OPERATIONAL_${eventType.toUpperCase()}`, {
-      correlationId,
-      userId,
-      component: operationalDetails.component,
-      operation: operationalDetails.operation,
-      result: operationalDetails.result,
-      duration: operationalDetails.duration,
-      details: operationalDetails.details,
-      timestamp: new Date().toISOString(),
+    logAuditEvent({
+      action: `OPERATIONAL_${eventType.toUpperCase()}`,
+      actor: userId || 'system',
+      resource: 'operational',
+      resourceId: correlationId,
+      details: {
+        component: operationalDetails.component,
+        operation: operationalDetails.operation,
+        result: operationalDetails.result,
+        duration: operationalDetails.duration,
+        details: operationalDetails.details,
+      },
+      result: operationalDetails.result === 'failure' ? 'failure' : 'success',
     });
   }
 }

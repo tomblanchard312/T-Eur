@@ -13,28 +13,34 @@ export const auditMiddleware = (req: Request, res: Response, next: NextFunction)
   (req as any).correlationId = correlationId;
 
   // Log the incoming request
-  logAuditEvent('API_REQUEST_RECEIVED', {
-    correlationId,
-    userId: req.auth?.institutionId,
-    method: req.method,
-    url: req.url,
-    userAgent: req.get('User-Agent'),
-    ip: req.ip,
-    timestamp: new Date().toISOString(),
+  logAuditEvent({
+    action: 'API_REQUEST_RECEIVED',
+    actor: req.auth?.institutionId || 'anonymous',
+    resource: 'api',
+    resourceId: req.url,
+    details: {
+      method: req.method,
+      userAgent: req.get('User-Agent'),
+      ip: req.ip,
+    },
+    result: 'success',
   });
 
   // Log the response when it's finished
   res.on('finish', () => {
     const duration = Date.now() - startTime;
 
-    logAuditEvent('API_REQUEST_COMPLETED', {
-      correlationId,
-      userId: req.auth?.institutionId,
-      method: req.method,
-      url: req.url,
-      statusCode: res.statusCode,
-      duration,
-      timestamp: new Date().toISOString(),
+    logAuditEvent({
+      action: 'API_REQUEST_COMPLETED',
+      actor: req.auth?.institutionId || 'anonymous',
+      resource: 'api',
+      resourceId: req.url,
+      details: {
+        method: req.method,
+        statusCode: res.statusCode,
+        duration,
+      },
+      result: 'success',
     });
   });
 
@@ -42,14 +48,18 @@ export const auditMiddleware = (req: Request, res: Response, next: NextFunction)
   res.on('error', (error) => {
     const duration = Date.now() - startTime;
 
-    logAuditEvent('API_REQUEST_ERROR', {
-      correlationId,
-      userId: req.auth?.institutionId,
-      method: req.method,
-      url: req.url,
-      error: error.message,
-      duration,
-      timestamp: new Date().toISOString(),
+    logAuditEvent({
+      action: 'API_REQUEST_ERROR',
+      actor: req.auth?.institutionId || 'anonymous',
+      resource: 'api',
+      resourceId: req.url,
+      details: {
+        method: req.method,
+        error: error.message,
+        duration,
+      },
+      result: 'failure',
+      errorMessage: error.message,
     });
   });
 
@@ -61,12 +71,15 @@ export const auditMiddleware = (req: Request, res: Response, next: NextFunction)
  */
 export const authAuditMiddleware = (req: Request, res: Response, next: NextFunction) => {
   if (req.auth) {
-    logAuditEvent('AUTHENTICATION_SUCCESS', {
-      correlationId: (req as any).correlationId,
-      userId: req.auth.institutionId,
-      method: req.method,
-      url: req.url,
-      timestamp: new Date().toISOString(),
+    logAuditEvent({
+      action: 'AUTHENTICATION_SUCCESS',
+      actor: req.auth!.institutionId,
+      resource: 'auth',
+      resourceId: req.url,
+      details: {
+        method: req.method,
+      },
+      result: 'success',
     });
   }
 

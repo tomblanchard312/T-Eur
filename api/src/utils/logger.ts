@@ -45,17 +45,21 @@ export const auditLogger = winston.createLogger({
   ],
 });
 
-export function logAuditEvent(event: {
-  action: string;
-  actor: string;
-  resource: string;
-  resourceId?: string;
-  details?: Record<string, unknown>;
-  result: 'success' | 'failure';
-  errorMessage?: string;
-}) {
+export function logAuditEvent(
+  event: {
+    action: string;
+    actor: string;
+    resource: string;
+    resourceId?: string;
+    details?: Record<string, unknown>;
+    result: 'success' | 'failure';
+    errorMessage?: string;
+  },
+  extra?: Record<string, unknown>
+) {
   auditLogger.info('Audit event', {
     ...event,
+    ...(extra || {}),
     timestamp: new Date().toISOString(),
   });
 }
