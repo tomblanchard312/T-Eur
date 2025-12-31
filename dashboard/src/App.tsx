@@ -7,6 +7,7 @@ import Transfers from './pages/Transfers';
 import Payments from './pages/Payments';
 import System from './pages/System';
 import Roles from './pages/Roles';
+import ConsumerWallet from './pages/ConsumerWallet';
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           <Route path="/payments" element={<Payments />} />
           <Route path="/system" element={<System />} />
           <Route path="/roles" element={<Roles />} />
+          <Route path="/consumer-wallet" element={<ConsumerWallet />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

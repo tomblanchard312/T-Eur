@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Wallet, ArrowLeftRight, FileText, Settings, Users, LayoutDashboard, Menu, X, Euro } from 'lucide-react';
+import { Wallet, ArrowLeftRight, FileText, Settings, Users, LayoutDashboard, Menu, X, Euro, Smartphone } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const navigation = [
@@ -8,6 +8,7 @@ const navigation = [
   { name: 'Wallets', to: '/wallets', icon: Wallet },
   { name: 'Transfers', to: '/transfers', icon: ArrowLeftRight },
   { name: 'Payments', to: '/payments', icon: FileText },
+  { name: 'Consumer Wallet', to: '/consumer-wallet', icon: Smartphone },
   { name: 'Roles', to: '/roles', icon: Users },
   { name: 'System', to: '/system', icon: Settings },
 ];
@@ -29,7 +30,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Euro className="w-8 h-8 text-blue-600" />
               <span className="text-xl font-bold">tEUR Admin</span>
             </div>
-            <button onClick={() => setSidebarOpen(false)}>
+            <button
+              type="button"
+              aria-label="Close sidebar menu"
+              onClick={() => setSidebarOpen(false)}
+            >
               <X className="w-6 h-6" />
             </button>
           </div>
@@ -91,6 +96,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <div className="lg:pl-64 flex flex-col flex-1">
         <div className="sticky top-0 z-10 flex h-16 flex-shrink-0 bg-white shadow lg:hidden">
           <button
+            type="button"
+            aria-label="Open sidebar menu"
             onClick={() => setSidebarOpen(true)}
             className="px-4 text-gray-500 focus:outline-none lg:hidden"
           >

@@ -45,13 +45,18 @@ router.post(
     const conditionTypeEnum = ConditionType[conditionType as keyof typeof ConditionType];
     const arbiterAddress = arbiter || '0x0000000000000000000000000000000000000000';
 
+    const correlationId = `payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+
     const result = await blockchainService.createConditionalPayment(
       payee,
       BigInt(amount),
       conditionTypeEnum,
       conditionData,
       expiresAt,
-      arbiterAddress
+      arbiterAddress,
+      correlationId,
+      userId
     );
 
     logAuditEvent({
@@ -133,7 +138,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { paymentId, proof } = req.body;
     
-    const result = await blockchainService.confirmDelivery(paymentId, proof);
+    const correlationId = `confirm-delivery-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.confirmDelivery(paymentId, proof, correlationId, userId);
 
     logAuditEvent({
       action: 'DELIVERY_CONFIRMED',
@@ -169,7 +177,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { paymentId, proof } = req.body;
     
-    const result = await blockchainService.releasePayment(paymentId, proof);
+    const correlationId = `release-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.releasePayment(paymentId, proof, correlationId, userId);
 
     logAuditEvent({
       action: 'PAYMENT_RELEASED',
@@ -204,7 +215,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { paymentId } = req.params;
     
-    const result = await blockchainService.cancelPayment(paymentId!);
+    const correlationId = `cancel-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.cancelPayment(paymentId!, correlationId, userId);
 
     logAuditEvent({
       action: 'PAYMENT_CANCELLED',
@@ -240,7 +254,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { paymentId, reason } = req.body;
     
-    const result = await blockchainService.disputePayment(paymentId);
+    const correlationId = `dispute-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.disputePayment(paymentId, correlationId, userId);
 
     logAuditEvent({
       action: 'PAYMENT_DISPUTED',
@@ -278,7 +295,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { paymentId, releaseToPayee } = req.body;
     
-    const result = await blockchainService.resolveDispute(paymentId, releaseToPayee);
+    const correlationId = `resolve-dispute-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.resolveDispute(paymentId, releaseToPayee, correlationId, userId);
 
     logAuditEvent({
       action: 'DISPUTE_RESOLVED',

@@ -1,0 +1,11 @@
+{
+  "holding_limit_individual": 100000,
+  "holding_limit_merchant": 1000000,
+  "offline_cap_per_device": 50000,
+  "transfer_velocity_limit_window_seconds": 60,
+  "transfer_velocity_limit_max_amount": 50000,
+  "fee_transfer_basis_points": 10,
+  "governance_change_delay_seconds": 86400,
+  "offline_reconciliation_window_seconds": 86400,
+  "offline_daily_velocity_per_wallet": 100000
+}
