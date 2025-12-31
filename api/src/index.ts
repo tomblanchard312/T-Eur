@@ -17,6 +17,7 @@ import transfersRouter from './routes/transfers.js';
 import paymentsRouter from './routes/payments.js';
 import adminRouter from './routes/admin.js';
 import fraudRouter from './routes/fraud.js';
+import auditRouter from './routes/audit.js';
 
 const app = express();
 
@@ -84,6 +85,7 @@ const openApiSpec = {
     { name: 'Transfers', description: 'Token transfer and waterfall operations' },
     { name: 'Conditional Payments', description: 'Escrow and conditional payment operations' },
     { name: 'Admin', description: 'Administrative operations (ECB/NCB only)' },
+    { name: 'Audit', description: 'Audit log querying and compliance (Admin only)' },
   ],
   components: {
     securitySchemes: {
@@ -170,6 +172,7 @@ apiRouter.use('/transfers', transfersRouter);
 apiRouter.use('/payments', paymentsRouter);
 apiRouter.use('/admin', adminRouter);
 apiRouter.use('/fraud', fraudRouter);
+apiRouter.use('/audit', auditRouter);
 
 app.use('/api/v1', apiRouter);
 

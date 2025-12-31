@@ -37,7 +37,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { to, amount, idempotencyKey } = req.body;
     
-    const result = await blockchainService.mint(to, BigInt(amount));
+    const correlationId = `mint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.mint(to, BigInt(amount), correlationId, userId);
 
     logAuditEvent({
       action: 'TOKENS_MINTED',
@@ -77,7 +80,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { from, amount, idempotencyKey } = req.body;
     
-    const result = await blockchainService.burn(from, BigInt(amount));
+    const correlationId = `burn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.burn(from, BigInt(amount), correlationId, userId);
 
     logAuditEvent({
       action: 'TOKENS_BURNED',
@@ -116,9 +122,12 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { from, to, amount, idempotencyKey } = req.body;
     
+    const correlationId = `transfer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
     // For now, the operator performs the transfer
     // In production, this would require the sender's signature
-    const result = await blockchainService.transfer(to, BigInt(amount));
+    const result = await blockchainService.transfer(to, BigInt(amount), correlationId, userId);
 
     logAuditEvent({
       action: 'TOKENS_TRANSFERRED',
@@ -156,7 +165,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { wallet } = req.body;
     
-    const result = await blockchainService.executeWaterfall(wallet);
+    const correlationId = `waterfall-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.executeWaterfall(wallet, correlationId, userId);
 
     logAuditEvent({
       action: 'WATERFALL_EXECUTED',
@@ -193,7 +205,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { wallet, amount, idempotencyKey } = req.body;
     
-    const result = await blockchainService.executeReverseWaterfall(wallet, BigInt(amount));
+    const correlationId = `reverse-waterfall-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.auth!.institutionId;
+    
+    const result = await blockchainService.executeReverseWaterfall(wallet, BigInt(amount), correlationId, userId);
 
     logAuditEvent({
       action: 'REVERSE_WATERFALL_EXECUTED',
