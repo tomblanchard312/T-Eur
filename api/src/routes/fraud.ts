@@ -109,7 +109,7 @@ router.post(
       action: 'fraud_alert_overridden',
       actor: agent_id,
       resource: 'fraud_alert',
-      resourceId: id,
+      ...(id && { resourceId: id }),
       details: { reason },
       result: 'success'
     });

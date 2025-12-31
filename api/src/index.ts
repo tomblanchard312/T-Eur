@@ -18,6 +18,7 @@ import paymentsRouter from './routes/payments.js';
 import adminRouter from './routes/admin.js';
 import fraudRouter from './routes/fraud.js';
 import auditRouter from './routes/audit.js';
+import merchantsRouter from './routes/merchants.js';
 
 const app = express();
 
@@ -173,6 +174,7 @@ apiRouter.use('/payments', paymentsRouter);
 apiRouter.use('/admin', adminRouter);
 apiRouter.use('/fraud', fraudRouter);
 apiRouter.use('/audit', auditRouter);
+apiRouter.use('/merchants', merchantsRouter);
 
 app.use('/api/v1', apiRouter);
 
@@ -196,27 +198,36 @@ app.use(errorHandler);
 
 // Start server
 async function start() {
+  let initFailed = false;
   try {
     // Initialize blockchain service
     await blockchainService.initialize();
-    
-    app.listen(config.port, () => {
-      logger.info(`🚀 tEUR API Gateway started`, {
-        port: config.port,
-        env: config.nodeEnv,
-        docsUrl: `http://localhost:${config.port}/api/docs`,
-      });
-      // Log loaded parameters for visibility in lab/dev only
-      try {
-        logger.info('Loaded rulebook parameters', { parameters: rulebookParameters });
-      } catch (e) {
-        logger.warn('Rulebook parameters not available', { error: e });
-      }
-    });
   } catch (error) {
-    logger.error('Failed to start server', { error });
-    process.exit(1);
+    initFailed = true;
+    logger.error('Failed to initialize blockchain service', { error });
+    // During test runs we prefer to continue without a live blockchain (tests may stub/mock it)
+    if (!(config.nodeEnv === 'test' || process.env.VITEST)) {
+      logger.error('Failed to start server', { error });
+      process.exit(1);
+    } else {
+      logger.warn('Continuing to start server without blockchain (test environment)');
+    }
   }
+
+  app.listen(config.port, () => {
+    logger.info(`🚀 tEUR API Gateway started`, {
+      port: config.port,
+      env: config.nodeEnv,
+      docsUrl: `http://localhost:${config.port}/api/docs`,
+      blockchainInitialized: !initFailed,
+    });
+    // Log loaded parameters for visibility in lab/dev only
+    try {
+      logger.info('Loaded rulebook parameters', { parameters: rulebookParameters });
+    } catch (e) {
+      logger.warn('Rulebook parameters not available', { error: e });
+    }
+  });
 }
 
 // Graceful shutdown
