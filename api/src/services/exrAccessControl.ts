@@ -67,7 +67,8 @@ export async function getNormalizedExrForPurpose(opts: {
     const content = await fs.promises.readFile(file, 'utf8');
     const lines = content.split(/\r?\n/).filter(Boolean);
     if (lines.length === 0) return null;
-    const last = JSON.parse(lines[lines.length - 1]);
+    const lastLine = lines[lines.length - 1]!;
+    const last = JSON.parse(lastLine);
     // Ensure advisory flag present
     last.advisory = true;
     last.advisory_note = 'ECB reference rates are published for information purposes only and must not be used for transaction pricing or settlement.';

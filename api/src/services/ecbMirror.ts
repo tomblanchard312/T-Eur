@@ -88,11 +88,10 @@ export class MirroredECBRecord {
   }) {
     this.seriesId = params.seriesId;
     this.retrievedAtUtc = params.retrievedAtUtc || new Date().toISOString();
-    this.provenance = {
-      sourceUrl: params.sourceUrl,
-      datasetId: params.datasetId,
-      seriesKey: params.seriesKey,
-    };
+    const prov: { sourceUrl: string; datasetId?: string; seriesKey?: string } = { sourceUrl: params.sourceUrl };
+    if (params.datasetId !== undefined) prov.datasetId = params.datasetId;
+    if (params.seriesKey !== undefined) prov.seriesKey = params.seriesKey;
+    this.provenance = prov;
 
     // normalize rawPayload into Buffer; caller should pass the raw bytes exactly as received
     if (typeof params.rawPayload === 'string') {
@@ -105,8 +104,8 @@ export class MirroredECBRecord {
     // compute the canonical raw payload hash
     this.rawPayloadHash = { algorithm: 'sha256', hex: MirroredECBRecord.computeSha256Hex(this.rawPayload) };
 
-    this.normalized = params.normalized;
-    if (this.normalized) {
+    if (params.normalized !== undefined) {
+      this.normalized = params.normalized;
       const normalizedJson = MirroredECBRecord.canonicalizeNormalized(this.normalized);
       this.normalizedHash = { algorithm: 'sha256', hex: MirroredECBRecord.computeSha256Hex(Buffer.from(normalizedJson, 'utf8')) };
     }
