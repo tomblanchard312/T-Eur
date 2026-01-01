@@ -1,0 +1,30 @@
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: allow-ecb-ingest-egress-fqdn
+spec:
+  selector: "app == 'ecb-ingest'"
+  order: 1000
+  egress:
+    - action: Allow
+      protocol: TCP
+      destination:
+        selector: ""
+        nets: []
+        # Calico supports FQDN matches via `fqdns` (requires DNS policy support)
+        fqdns:
+          - "data.ecb.europa.eu"
+      destinationPorts:
+        - 443
+  types:
+    - Egress
+
+# This is a Calico GlobalNetworkPolicy example that allows pods with label
+# `app=ecb-ingest` to egress only to the DNS name `data.ecb.europa.eu` on port 443.
+#
+# Important:
+# - This manifest uses Calico's `fqdns` feature which is NOT part of the
+#   Kubernetes NetworkPolicy standard. Use it only if your cluster's CNI is
+#   Calico and DNS-based rules are enabled and supported in your environment.
+# - Calico will resolve FQDNs and enforce egress accordingly, but this requires
+#   attention to DNS caching and DNS server behavior to avoid gaps in enforcement.

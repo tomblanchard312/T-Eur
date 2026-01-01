@@ -1,0 +1,24 @@
+{
+  "$id": "https://example.com/schemas/ecb-timeseries.schema.json",
+  "title": "ECB Canonical Time Series",
+  "type": "object",
+  "required": ["seriesId", "retrievedAt", "observations"],
+  "properties": {
+    "seriesId": { "type": "string" },
+    "retrievedAt": { "type": "string", "format": "date-time" },
+    "source": { "type": "string" },
+    "frequency": { "type": ["string", "null"] },
+    "metadata": { "type": "object" },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["period", "value"],
+        "properties": {
+          "period": { "type": "string" },
+          "value": { "type": ["number", "null"] }
+        }
+      }
+    }
+  }
+}

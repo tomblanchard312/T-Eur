@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-egress-by-default
+  namespace: teur
+  labels:
+    purpose: ecb-reference-data
+# This NetworkPolicy denies all egress traffic from pods in the `teur` namespace
+# by default. Specific egress exceptions must be created for pods that require
+# outbound access (e.g., the ecb-ingest pod). This enforces a least-privilege
+# posture for outbound network access.
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress: []

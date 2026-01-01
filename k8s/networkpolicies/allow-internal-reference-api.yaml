@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal-reference-api
+  namespace: teur
+  labels:
+    purpose: ecb-reference-data
+# Allow only internal consumers to access the internal reference data API service
+# (e.g., pods labeled `app=reference-api`). This prevents external pods from
+# directly reading reference data except via approved interfaces.
+spec:
+  podSelector:
+    matchLabels:
+      app: reference-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network: internal
+        - podSelector:
+            matchLabels:
+              app: analytics
+      ports:
+        - protocol: TCP
+          port: 8080

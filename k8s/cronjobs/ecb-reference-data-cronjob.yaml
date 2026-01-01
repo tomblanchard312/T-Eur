@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ecb-reference-data-ingest
+  namespace: teur
+  labels:
+    app: ecb-reference-data
+spec:
+  # every 6 hours by default (adjust per policy)
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: ecb-ingest
+              # Replace image with your built image registry/tag
+              image: ghcr.io/tomblanchard312/teur-ecb-ingest:latest
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: SERIES_WHITELIST
+                  value: "EXR.D.USD.EUR.SP00.A,ICP.M.U2.N.000000+XEF000.SA"
+                - name: ECB_BASE_URL
+                  value: "https://sdw-wsrest.ecb.europa.eu/service/data"
+                - name: OUTPUT_DIR
+                  value: "/data/ecb"
+              volumeMounts:
+                - name: ecb-data
+                  mountPath: /data/ecb
+          volumes:
+            - name: ecb-data
+              persistentVolumeClaim:
+                # Create a PVC named `ecb-reference-data-pvc` in your cluster, or change to an appropriate PVC
+                claimName: ecb-reference-data-pvc
