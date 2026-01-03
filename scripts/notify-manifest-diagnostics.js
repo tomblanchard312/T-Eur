@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const ingestLogger = require('./ingestLogger');
 
 function usage() {
-  console.error('Usage: node scripts/notify-manifest-diagnostics.js --manifestDir <dir> --date <YYYY-MM-DD> --webhook <url>');
+  ingestLogger.log('error', 'usage', { error_category: 'bad_invocation' });
   process.exit(2);
 }
 
@@ -28,14 +29,23 @@ if (!manifestDir || !date) usage();
 
 const diagPath = path.join(manifestDir, `manifest-${date}.diagnostics.jsonl`);
 if (!fs.existsSync(diagPath)) {
-  console.log(`No diagnostics found at ${diagPath}`);
+  ingestLogger.log('info', 'no_diagnostics', { diagnostics_path: diagPath });
   process.exit(0);
 }
 
 const lines = fs.readFileSync(diagPath, 'utf8').split(/\r?\n/).filter(Boolean);
 const count = lines.length;
-const samples = lines.slice(0, 10).map(l => {
-  try { return JSON.parse(l); } catch (e) { return { raw: l }; }
+const samples = lines.slice(0, 10).map((l, idx) => {
+  try {
+    const parsed = JSON.parse(l);
+    return {
+      seriesId: parsed.seriesId || undefined,
+      error_category: parsed.error || parsed.error_category || 'parse_error',
+      line_number: idx + 1,
+    };
+  } catch (e) {
+    return { error_category: 'parse_error', line_number: idx + 1 };
+  }
 });
 
 const payload = {
@@ -48,7 +58,7 @@ const payload = {
 
 async function send() {
   if (!webhook) {
-    console.log('No webhook configured; printing payload:\n', JSON.stringify(payload, null, 2));
+    ingestLogger.log('info', 'no_webhook', { diagnostics_path: diagPath, diagnostics_count: count, created_at_utc: payload.created_at_utc });
     process.exit(0);
   }
 
@@ -59,12 +69,12 @@ async function send() {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      console.error('Webhook POST failed', res.status, await res.text());
+      ingestLogger.log('error', 'webhook_post_failed', { http_status: res.status, error_category: 'webhook_failure', retryable: res.status >= 500 });
       process.exit(3);
     }
-    console.log('Alert posted to webhook, diagnostics_count=', count);
+    ingestLogger.log('info', 'webhook_posted', { diagnostics_count: count });
   } catch (e) {
-    console.error('Failed to POST webhook', String(e));
+    ingestLogger.log('error', 'webhook_post_exception', { error_category: 'webhook_exception', retryable: true });
     process.exit(4);
   }
 }

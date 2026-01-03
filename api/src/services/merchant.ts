@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import { blockchainService, WalletType } from './blockchain.js';
 import { auditService } from './audit.js';
-import { logAuditEvent } from '../utils/logger.js';
+import { logAuditEvent, logger } from '../utils/logger.js';
 
 /**
  * Merchant onboarding status
@@ -145,7 +145,8 @@ export class MerchantOnboardingService {
       );
     } catch (error) {
       // Log error but don't fail application submission
-      console.error('Failed to register merchant wallet:', error);
+      // Avoid free-form console logging; use structured logger for machine parsing
+      logger.error('Failed to register merchant wallet', { error: String(error), applicationId });
     }
 
     // Audit log

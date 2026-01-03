@@ -204,10 +204,10 @@ async function start() {
     await blockchainService.initialize();
   } catch (error) {
     initFailed = true;
-    logger.error('Failed to initialize blockchain service', { error });
+    logger.error('Failed to initialize blockchain service', { error: String(error) });
     // During test runs we prefer to continue without a live blockchain (tests may stub/mock it)
     if (!(config.nodeEnv === 'test' || process.env.VITEST)) {
-      logger.error('Failed to start server', { error });
+      logger.error('Failed to start server', { error: String(error) });
       process.exit(1);
     } else {
       logger.warn('Continuing to start server without blockchain (test environment)');
@@ -225,7 +225,7 @@ async function start() {
     try {
       logger.info('Loaded rulebook parameters', { parameters: rulebookParameters });
     } catch (e) {
-      logger.warn('Rulebook parameters not available', { error: e });
+      logger.warn('Rulebook parameters not available', { error: String(e) });
     }
   });
 }

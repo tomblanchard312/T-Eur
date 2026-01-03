@@ -76,8 +76,16 @@ function loadConfig() {
   });
 
   if (!result.success) {
-    console.error('Configuration validation failed:');
-    console.error(result.error.format());
+    // Avoid importing the main logger here to prevent circular dependency during startup.
+    // Emit a structured error to stderr so bootstrapping systems can parse it.
+    const out = {
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      component: 'config-loader',
+      event: 'config_validation_failed',
+      details: result.error.format(),
+    };
+    try { process.stderr.write(JSON.stringify(out) + '\n'); } catch (_) { /* best-effort */ }
     throw new Error('Invalid configuration');
   }
 

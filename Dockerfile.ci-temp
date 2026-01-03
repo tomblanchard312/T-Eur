@@ -1,0 +1,18 @@
+FROM node:20-bullseye
+
+WORKDIR /app
+
+# Copy package metadata first for better caching
+COPY api/package*.json api/
+
+# Copy the rest of the API sources
+COPY api/ api/
+COPY envs/ envs/
+COPY docs/ docs/
+
+WORKDIR /app/api
+
+# Install deps, build, and run tests
+RUN npm ci && npm run build && npm test
+
+CMD ["/bin/bash"]

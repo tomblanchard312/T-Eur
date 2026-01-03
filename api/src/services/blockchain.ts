@@ -189,7 +189,7 @@ class BlockchainService {
 
       this.initialized = true;
     } catch (error) {
-      logger.error('Failed to initialize blockchain service', { error });
+      logger.error('Failed to initialize blockchain service', { error: String(error) });
       throw new BlockchainError('Failed to connect to blockchain');
     }
   }
