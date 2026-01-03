@@ -1,0 +1,6 @@
+FROM node:18-alpine
+WORKDIR /app
+COPY bin/ecb-ingest.js /app/ecb-ingest.js
+RUN chmod +x /app/ecb-ingest.js
+ENV NODE_ENV=production
+ENTRYPOINT ["node", "/app/ecb-ingest.js"]

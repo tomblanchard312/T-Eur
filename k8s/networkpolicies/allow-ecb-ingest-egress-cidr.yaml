@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ecb-ingest-egress-to-ecb
+  namespace: teur
+  labels:
+    purpose: ecb-reference-data
+# NOTE: Standard Kubernetes NetworkPolicy can only restrict egress by IP/CIDR
+# (or by pod/namespace selectors). It cannot match FQDNs. To restrict by DNS
+# name (e.g. data.ecb.europa.eu) you must either:
+#  - Use a CNI that supports FQDN-based policies (e.g., Calico Enterprise/Calico
+#    with GlobalNetworkPolicy and `to.fqdns`), OR
+#  - Route all external egress through a controlled egress gateway/proxy and
+#    restrict access there, OR
+#  - Use provider-managed egress filtering (cloud NAT with allowlist)
+#
+# The manifest below is the conservative Kubernetes-only variant: it allows
+# egress from pods labeled `app=ecb-ingest` to specific ECB IP ranges (CIDR).
+# Operators MUST replace the placeholder CIDRs with the authoritative IP list
+# for the ECB SDMX endpoint, or use an egress proxy approach.
+spec:
+  podSelector:
+    matchLabels:
+      app: ecb-ingest
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 91.189.88.0/24 # <-- REPLACE with actual ECB SDMX IP/CIDR
+      ports:
+        - protocol: TCP
+          port: 443
