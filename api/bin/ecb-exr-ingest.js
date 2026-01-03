@@ -29,11 +29,18 @@ const EXR_WHITELIST = [
 
 const OUTPUT_DIR = process.env.OUTPUT_DIR || '/data/ecb-exr';
 
-function log(...args) { console.log(new Date().toISOString(), ...args); }
+function log(event, context = {}) {
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    service: 'ecb-exr-ingest',
+    event,
+    ...context
+  }));
+}
 
 async function fetchSeries(seriesId) {
   const url = `${ECB_BASE}/${encodeURIComponent(seriesId)}?format=JSON`;
-  log('fetching', seriesId, url);
+  log('FETCH_SERIES_INITIATED', { seriesId, url });
   const res = await fetch(url);
   if (!res.ok) throw new Error(`fetch ${seriesId} failed ${res.status}`);
   return res.json();
@@ -100,12 +107,12 @@ async function writeOut(seriesId, obj) {
   await fs.promises.mkdir(OUTPUT_DIR, { recursive: true });
   const file = path.join(OUTPUT_DIR, `${seriesId.replace(/[^a-zA-Z0-9-_]/g, '_')}.jsonl`);
   await fs.promises.appendFile(file, JSON.stringify(obj) + '\n', 'utf8');
-  log('wrote', file);
+  log('CANONICAL_RECORD_WRITTEN', { seriesId, file });
 }
 
 async function main() {
   if (EXR_WHITELIST.length === 0) {
-    log('no exr series configured');
+    log('INGEST_SKIPPED', { reason: 'No EXR series configured' });
     return;
   }
 
@@ -118,16 +125,24 @@ async function main() {
       norm.advisory_note = 'ECB reference rates are published for information purposes only and must not be used for transaction pricing or settlement.';
       await writeOut(s, norm);
     } catch (err) {
-      log('error', s, err && err.message ? err.message : err);
+      log('INGEST_FAILED', { seriesId: s, error: err && err.message ? err.message : String(err) });
       // Fail job so operator can investigate
       process.exit(1);
     }
   }
-  log('completed exr ingestion');
+  log('INGEST_COMPLETED', { count: EXR_WHITELIST.length });
 }
 
 if (require.main === module) {
-  main().catch(e => { console.error('fatal', e); process.exit(1); });
+  main().catch(e => { 
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      service: 'ecb-exr-ingest',
+      event: 'FATAL_ERROR',
+      error: e && e.message ? e.message : String(e)
+    }));
+    process.exit(1); 
+  });
 }
 
 // Note: This script intentionally does NOT export any function that returns

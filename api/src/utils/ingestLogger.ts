@@ -1,4 +1,14 @@
-export type IngestContext = {
+import { logger, LogSeverity, LogEvent, LogContext } from './logger.js';
+
+/**
+ * IngestLogger: Specialized logger for data ingestion pipelines.
+ * 
+ * This logger wraps the central secure logger to provide a consistent
+ * interface for ingestion-specific events while enforcing all security
+ * and structural requirements.
+ */
+
+export type IngestContext = LogContext & {
   seriesId?: string;
   http_status?: number;
   error_category?: string;
@@ -6,24 +16,13 @@ export type IngestContext = {
   line_number?: number;
   diagnostics_path?: string;
   diagnostics_count?: number;
-  [k: string]: any;
 };
 
 const ingestLogger = {
-  log(level: 'error' | 'warn' | 'info' | 'debug', event: string, context: IngestContext = {}) {
-    const out = {
-      timestamp: new Date().toISOString(),
-      level,
-      event,
-      ...context,
-    } as Record<string, unknown>;
-    // Ensure deterministic key ordering for downstream systems
-    const ordered: Record<string, unknown> = {};
-    Object.keys(out).sort().forEach(k => { ordered[k] = (out as any)[k]; });
-    // Emit single-line JSON
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify(ordered));
+  log(level: LogSeverity, event: LogEvent, context: IngestContext = {}) {
+    logger.log(level, 'INGEST_SERVICE', event, context);
   }
 };
 
 export default ingestLogger;
+

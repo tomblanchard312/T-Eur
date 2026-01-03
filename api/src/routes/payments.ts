@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { blockchainService, ConditionType } from '../services/blockchain.js';
+import { parameters } from '../config/parameters.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate, asyncHandler, NotFoundError } from '../middleware/errors.js';
 import { idempotency, strictRateLimiter } from '../middleware/common.js';
 import { logAuditEvent } from '../utils/logger.js';
+import { generateCorrelationId } from '../utils/crypto.js';
 import {
   createConditionalPaymentSchema,
   confirmDeliverySchema,
@@ -32,6 +35,9 @@ router.post(
   idempotency,
   validate(createConditionalPaymentSchema),
   asyncHandler(async (req: Request, res: Response) => {
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    // Use validated data from req.body
+    const body = req.body as z.infer<typeof createConditionalPaymentSchema>;
     const { 
       payee, 
       amount, 
@@ -40,12 +46,12 @@ router.post(
       expiresAt, 
       arbiter,
       idempotencyKey 
-    } = req.body;
+    } = body;
     
     const conditionTypeEnum = ConditionType[conditionType as keyof typeof ConditionType];
-    const arbiterAddress = arbiter || '0x0000000000000000000000000000000000000000';
+    const arbiterAddress = arbiter || parameters.default_arbiter_address;
 
-    const correlationId = `payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const correlationId = generateCorrelationId('payment');
     const userId = req.auth!.institutionId;
 
     const result = await blockchainService.createConditionalPayment(
@@ -136,9 +142,12 @@ router.post(
   strictRateLimiter,
   validate(confirmDeliverySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { paymentId, proof } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof confirmDeliverySchema>;
+    const { paymentId, proof } = body;
     
-    const correlationId = `confirm-delivery-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
+    const correlationId = generateCorrelationId('confirm-delivery');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.confirmDelivery(paymentId, proof, correlationId, userId);
@@ -175,9 +184,12 @@ router.post(
   strictRateLimiter,
   validate(releasePaymentSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { paymentId, proof } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof releasePaymentSchema>;
+    const { paymentId, proof } = body;
     
-    const correlationId = `release-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
+    const correlationId = generateCorrelationId('release-payment');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.releasePayment(paymentId, proof, correlationId, userId);
@@ -213,9 +225,11 @@ router.post(
   requirePermission('conditional_payments'),
   strictRateLimiter,
   asyncHandler(async (req: Request, res: Response) => {
+    // OWASP: Injection - Use strictly validated path parameters
     const { paymentId } = req.params;
     
-    const correlationId = `cancel-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
+    const correlationId = generateCorrelationId('cancel-payment');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.cancelPayment(paymentId!, correlationId, userId);
@@ -252,9 +266,12 @@ router.post(
   strictRateLimiter,
   validate(disputePaymentSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { paymentId, reason } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof disputePaymentSchema>;
+    const { paymentId, reason } = body;
     
-    const correlationId = `dispute-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
+    const correlationId = generateCorrelationId('dispute-payment');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.disputePayment(paymentId, correlationId, userId);
@@ -293,9 +310,12 @@ router.post(
   strictRateLimiter,
   validate(resolveDisputeSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { paymentId, releaseToPayee } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof resolveDisputeSchema>;
+    const { paymentId, releaseToPayee } = body;
     
-    const correlationId = `resolve-dispute-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
+    const correlationId = generateCorrelationId('resolve-dispute');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.resolveDispute(paymentId, releaseToPayee, correlationId, userId);

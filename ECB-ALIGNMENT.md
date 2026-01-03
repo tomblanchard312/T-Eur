@@ -35,62 +35,70 @@ To stay maximally compatible with ECB language:
 ## 3. Alignment matrix
 
 Legend:
+
 - Aligned: matches direction
 - Partial: aligns but requires additional constraints
 - Divergent: needs a change
 
-| Topic | ECB Digital Euro direction | Current tEUR design | Alignment | Required changes |
-|---|---|---|---|---|
-| Distribution model | Supervised PSPs distribute and service users | Banks and PSPs operate gateways and wallets | Aligned | Use “scheme participant” and onboarding controls in docs and code comments |
-| Scheme rulebook | Single set of rules, standards, procedures | Canonical conventions plus governance coded rules | Aligned | Add explicit “Rulebook parameters” module and keep it provider agnostic |
-| Privacy | Privacy by design, strong legal framework | Split horizon, data minimization, tiering | Partial | Add explicit offline privacy model and legal reference anchoring |
-| Offline payments | Offline capability is core resilience feature | Planned as separate subsystem | Partial | Treat offline as secure element plus reconciliation protocol, not “offline blockchain” |
-| Holding limits | Limits to protect financial stability and reduce run risk | Discussed as governance controlled policy | Partial | Implement holding limits as explicit policy parameters enforced at gateway and optionally on chain |
-| Resilience | Works under outages | Closed settlement plane plus quorum | Aligned | Add chaos tests and runbooks to prove degraded modes |
-| Monetary sovereignty | Reduce dependence on non EU payment rails | Zero third party critical path goal | Aligned | Explicitly prohibit CDN and managed DNS for settlement plane |
-| Legal tender and acceptance | Wide acceptance objectives | Not yet modeled | Divergent | Add merchant acceptance and fees as scheme policy workstream, do not hard code |
-| Sanctions and freezes | Enforced under legal framework | Freeze registry and scoped controls | Aligned | Freeze only, preserve ownership, reversible, auditable |
-| Confiscation | Court or statute based, exceptional | Escrow based model | Aligned | Require escrow with appeal window and higher governance threshold |
+| Topic                       | ECB Digital Euro direction                                | Current tEUR design                               | Alignment | Required changes                                                                                   |
+| --------------------------- | --------------------------------------------------------- | ------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------- |
+| Distribution model          | Supervised PSPs distribute and service users              | Banks and PSPs operate gateways and wallets       | Aligned   | Use “scheme participant” and onboarding controls in docs and code comments                         |
+| Scheme rulebook             | Single set of rules, standards, procedures                | Canonical conventions plus governance coded rules | Aligned   | Add explicit “Rulebook parameters” module and keep it provider agnostic                            |
+| Privacy                     | Privacy by design, strong legal framework                 | Split horizon, data minimization, tiering         | Partial   | Add explicit offline privacy model and legal reference anchoring                                   |
+| Offline payments            | Offline capability is core resilience feature             | Planned as separate subsystem                     | Partial   | Treat offline as secure element plus reconciliation protocol, not “offline blockchain”             |
+| Holding limits              | Limits to protect financial stability and reduce run risk | Discussed as governance controlled policy         | Partial   | Implement holding limits as explicit policy parameters enforced at gateway and optionally on chain |
+| Resilience                  | Works under outages                                       | Closed settlement plane plus quorum               | Aligned   | Add chaos tests and runbooks to prove degraded modes                                               |
+| Monetary sovereignty        | Reduce dependence on non EU payment rails                 | Zero third party critical path goal               | Aligned   | Explicitly prohibit CDN and managed DNS for settlement plane                                       |
+| Legal tender and acceptance | Wide acceptance objectives                                | Not yet modeled                                   | Divergent | Add merchant acceptance and fees as scheme policy workstream, do not hard code                     |
+| Sanctions and freezes       | Enforced under legal framework                            | Freeze registry and scoped controls               | Aligned   | Freeze only, preserve ownership, reversible, auditable                                             |
+| Confiscation                | Court or statute based, exceptional                       | Escrow based model                                | Aligned   | Require escrow with appeal window and higher governance threshold                                  |
 
 ## 4. Changes we discussed that must be applied
 
 ### 4.1 Infrastructure and sovereignty changes
 
-1) No third party critical dependencies  
-- No Cloudflare DNS or edge services for settlement plane.  
+1. No third party critical dependencies
+
+- No Cloudflare DNS or edge services for settlement plane.
 - Public access plane may use public internet protections, but settlement plane must not.
 
-2) Closed settlement plane plus public access plane separation  
-- CSP: interbank settlement, validator connectivity, internal DNS.  
+2. Closed settlement plane plus public access plane separation
+
+- CSP: interbank settlement, validator connectivity, internal DNS.
 - PAP: consumer and merchant access, public APIs, portals.
 
-3) Terraform first, open source infrastructure  
-- All core infrastructure modules are open source and provider agnostic.  
-- One Terraform state per zone.  
+3. Terraform first, open source infrastructure
+
+- All core infrastructure modules are open source and provider agnostic.
+- One Terraform state per zone.
 - No cloud vendor specific managed dependencies as defaults.
 
 ### 4.2 Governance and regulatory change changes
 
-4) Encode process, not politics  
-- No hard coded country lists.  
-- Membership is role based and governance controlled.  
+4. Encode process, not politics
+
+- No hard coded country lists.
+- Membership is role based and governance controlled.
 - Add and remove participants through governance actions with audit events.
 
-5) Membership churn and union changes  
-- Support new member states joining without redeploy.  
+5. Membership churn and union changes
+
+- Support new member states joining without redeploy.
 - Support member state exit with phased disengagement: notice, permission suspension, validator removal, unwind.
 
 ### 4.3 Sanctions and confiscation changes
 
-6) Sanctions are freezes only  
-- Freeze blocks transfer and redemption.  
-- Freeze does not move balances.  
+6. Sanctions are freezes only
+
+- Freeze blocks transfer and redemption.
+- Freeze does not move balances.
 - Freeze is reversible and reviewable.
 
-7) Confiscation is court ordered and escrow based  
-- Requires explicit legal basis reference.  
-- Requires higher governance threshold than freezing.  
-- Funds move only to court controlled escrow, not to end beneficiaries directly.  
+7. Confiscation is court ordered and escrow based
+
+- Requires explicit legal basis reference.
+- Requires higher governance threshold than freezing.
+- Funds move only to court controlled escrow, not to end beneficiaries directly.
 - Escrow supports appeal windows and auditable releases.
 
 ## 5. Implementation workstreams
@@ -98,23 +106,27 @@ Legend:
 ### 5.1 Scheme and rulebook workstream
 
 Deliverables:
+
 - `docs/rulebook-parameters.md`
 - `docs/participant-onboarding.md`
 - `docs/merchant-acceptance.md`
 - `docs/fees-and-limits.md`
 
 Constraints:
-- All parameters must be changeable by governance.  
+
+- All parameters must be changeable by governance.
 - No redeploy required for policy updates.
 
 ### 5.2 Offline workstream
 
 Deliverables:
+
 - `docs/offline-payments-architecture.md`
 - `docs/offline-risk-limits.md`
 - `docs/reconciliation-protocol.md`
 
 Key decisions:
+
 - Secure element based offline wallet model
 - Double spend controls via hardware plus reconciliation
 - Offline caps and velocity controls as policy parameters
@@ -122,11 +134,13 @@ Key decisions:
 ### 5.3 Ledger and contract workstream
 
 Deliverables:
+
 - `contracts/` canonical layout
 - Governance controlled permissioning
 - Sanctions registry and confiscation escrow
 
 Constraints:
+
 - Single responsibility contracts
 - Explicit upgrade governance
 - Immutable audit events for all sensitive actions
@@ -134,11 +148,13 @@ Constraints:
 ### 5.4 Resilience and testing workstream
 
 Deliverables:
+
 - `docs/degraded-modes.md`
 - `docs/runbooks/` for zone isolation, quorum degradation, DNS failure
 - `tests/chaos/` scripts to simulate partitions and recovery
 
 Success criteria:
+
 - Settlement continues with quorum despite one zone loss
 - Authorization can operate in bounded degraded mode when settlement is delayed
 - Reconciliation completes with idempotency and no double spend
@@ -147,26 +163,23 @@ Success criteria:
 
 Recommended repo files:
 
-- `.github/copilot-instructions.md`  
-- `docs/canonical-naming-and-copilot-instructions.md`  
-- `docs/ECB-ALIGNMENT.md` (this file)  
-- `docs/INVARIANTS.md` (safety properties)  
-- `CODEOWNERS` (governance, contracts, infra separated)  
+- `docs/ECB-ALIGNMENT.md` (this file)
+- `docs/INVARIANTS.md` (safety properties)
+- `CODEOWNERS` (governance, contracts, infra separated)
 
 ## 7. Non negotiable invariants (summary)
 
-- No silent balance changes  
-- No unilateral minting  
-- No unilateral freezing  
-- No confiscation without court or statute reference  
-- No direct redistribution without escrow  
-- No public internet dependency for settlement plane  
+- No silent balance changes
+- No unilateral minting
+- No unilateral freezing
+- No confiscation without court or statute reference
+- No direct redistribution without escrow
+- No public internet dependency for settlement plane
 - No hard coded country lists in contracts
 
 ## 8. Next actions
 
-1) Implement explicit holding limit policy parameters and enforcement points.  
-2) Draft the offline subsystem design documents and risk limits.  
-3) Draft governance role registry and voting thresholds as code plus docs.  
-4) Add chaos tests for DNS, link, and zone failures.
-
+1. Implement explicit holding limit policy parameters and enforcement points.
+2. Draft the offline subsystem design documents and risk limits.
+3. Draft governance role registry and voting thresholds as code plus docs.
+4. Add chaos tests for DNS, link, and zone failures.

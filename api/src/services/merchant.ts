@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import { blockchainService, WalletType } from './blockchain.js';
 import { auditService } from './audit.js';
 import { logAuditEvent, logger } from '../utils/logger.js';
+import { rulebookParameters } from '../config/index.js';
 
 /**
  * Merchant onboarding status
@@ -29,10 +30,30 @@ export enum MerchantType {
 }
 
 /**
- * Merchant profile
+ * Merchant profile (Operational data only)
+ * ECB Alignment: Data minimization - separate PII from operational profile.
  */
 export interface MerchantProfile {
   id: string;
+  businessType: MerchantType;
+  settlementAccount: string; // Linked PSP/bank account
+  walletAddress: string;
+  status: MerchantStatus;
+  kycStatus: 'pending' | 'approved' | 'rejected';
+  riskScore: number;
+  monthlyVolume: bigint;
+  createdAt: Date;
+  updatedAt: Date;
+  approvedAt?: Date;
+  approvedBy?: string;
+}
+
+/**
+ * Merchant PII (Stored separately, access-controlled)
+ * ECB Alignment: Purpose limitation - PII only used for onboarding and compliance.
+ */
+export interface MerchantPII {
+  merchantId: string;
   businessName: string;
   businessRegistrationNumber: string;
   taxId: string;
@@ -47,17 +68,6 @@ export interface MerchantProfile {
     phone: string;
     website?: string;
   };
-  businessType: MerchantType;
-  settlementAccount: string; // Linked PSP/bank account
-  walletAddress: string;
-  status: MerchantStatus;
-  kycStatus: 'pending' | 'approved' | 'rejected';
-  riskScore: number;
-  monthlyVolume: bigint;
-  createdAt: Date;
-  updatedAt: Date;
-  approvedAt?: Date;
-  approvedBy?: string;
 }
 
 /**
@@ -96,6 +106,7 @@ export interface MerchantApplication {
  */
 export class MerchantOnboardingService {
   private merchants = new Map<string, MerchantProfile>();
+  private merchantPII = new Map<string, MerchantPII>();
 
   /**
    * Submit merchant onboarding application
@@ -111,14 +122,9 @@ export class MerchantOnboardingService {
     // Generate application ID
     const applicationId = `merchant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    // Create merchant profile
+    // Create merchant profile (Operational data)
     const profile: MerchantProfile = {
       id: applicationId,
-      businessName: application.businessName,
-      businessRegistrationNumber: application.businessRegistrationNumber,
-      taxId: application.taxId,
-      businessAddress: application.businessAddress,
-      contactInfo: application.contactInfo,
       businessType: application.businessType,
       settlementAccount: application.settlementAccount,
       walletAddress: application.walletAddress,
@@ -130,8 +136,19 @@ export class MerchantOnboardingService {
       updatedAt: new Date(),
     };
 
-    // Store profile
+    // Create merchant PII (Separated)
+    const pii: MerchantPII = {
+      merchantId: applicationId,
+      businessName: application.businessName,
+      businessRegistrationNumber: application.businessRegistrationNumber,
+      taxId: application.taxId,
+      businessAddress: application.businessAddress,
+      contactInfo: application.contactInfo,
+    };
+
+    // Store data
     this.merchants.set(applicationId, profile);
+    this.merchantPII.set(applicationId, pii);
 
     // Register wallet if not already registered
     try {
@@ -145,13 +162,15 @@ export class MerchantOnboardingService {
       );
     } catch (error) {
       // Log error but don't fail application submission
-      // Avoid free-form console logging; use structured logger for machine parsing
-      logger.error('Failed to register merchant wallet', { error: String(error), applicationId });
+      // OWASP: Security Logging and Monitoring - Log internal errors with structured context
+      logger.error('MERCHANT_SERVICE', 'INTERNAL_SERVER_ERROR', { 
+        errorCode: String(error), 
+        resourceId: applicationId 
+      });
     }
 
     // Audit log
     await auditService.logComplianceEvent(
-      'MERCHANT_APPLICATION_SUBMITTED',
       correlationId,
       userId,
       {
@@ -196,7 +215,8 @@ export class MerchantOnboardingService {
     userId?: string
   ): Promise<void> {
     const profile = this.merchants.get(applicationId);
-    if (!profile) {
+    const pii = this.merchantPII.get(applicationId);
+    if (!profile || !pii) {
       throw new Error('Merchant application not found');
     }
 
@@ -205,7 +225,7 @@ export class MerchantOnboardingService {
       profile.kycStatus = 'approved';
       profile.approvedAt = new Date();
       profile.approvedBy = reviewerId;
-      profile.riskScore = this.calculateRiskScore(profile);
+      profile.riskScore = this.calculateRiskScore(profile, pii);
     } else {
       profile.status = MerchantStatus.REJECTED;
       profile.kycStatus = 'rejected';
@@ -215,7 +235,6 @@ export class MerchantOnboardingService {
 
     // Audit log
     await auditService.logComplianceEvent(
-      'MERCHANT_APPLICATION_REVIEWED',
       correlationId || `review-${Date.now()}`,
       userId || reviewerId,
       {
@@ -255,6 +274,14 @@ export class MerchantOnboardingService {
   }
 
   /**
+   * Get merchant PII (Restricted access)
+   * ECB Alignment: Purpose limitation - PII only accessible for compliance/admin.
+   */
+  getMerchantPII(merchantId: string): MerchantPII | null {
+    return this.merchantPII.get(merchantId) || null;
+  }
+
+  /**
    * List merchants with filtering
    */
   listMerchants(filters?: {
@@ -275,7 +302,11 @@ export class MerchantOnboardingService {
     }
 
     if (filters?.country) {
-      merchants = merchants.filter(m => m.businessAddress.country === filters.country);
+      // Need to join with PII for country filter
+      merchants = merchants.filter(m => {
+        const pii = this.merchantPII.get(m.id);
+        return pii?.businessAddress.country === filters.country;
+      });
     }
 
     // Apply pagination
@@ -299,10 +330,9 @@ export class MerchantOnboardingService {
     profile.monthlyVolume = volume;
     profile.updatedAt = new Date();
 
-    // Check for suspicious activity
-    if (volume > BigInt(5000000)) { // €50,000 threshold
+    // Check for suspicious activity - threshold from governance parameters
+    if (volume > BigInt(rulebookParameters.suspicious_volume_threshold_cents)) {
       await auditService.logSecurityEvent(
-        'SUSPICIOUS_MERCHANT_ACTIVITY',
         `volume-check-${Date.now()}`,
         undefined,
         {
@@ -312,7 +342,7 @@ export class MerchantOnboardingService {
           details: {
             merchantId,
             volume: volume.toString(),
-            threshold: '5000000',
+            threshold: rulebookParameters.suspicious_volume_threshold_cents.toString(),
           },
         }
       );
@@ -355,7 +385,7 @@ export class MerchantOnboardingService {
   /**
    * Calculate risk score for merchant (simplified version)
    */
-  private calculateRiskScore(profile: MerchantProfile): number {
+  private calculateRiskScore(profile: MerchantProfile, pii: MerchantPII): number {
     let score = 50; // Base score
 
     // Business type risk adjustment
@@ -371,9 +401,9 @@ export class MerchantOnboardingService {
         break;
     }
 
-    // Country risk (simplified)
-    const highRiskCountries = ['CountryX', 'CountryY'];
-    if (highRiskCountries.includes(profile.businessAddress.country)) {
+    // Country risk - loaded from governance parameters
+    const highRiskCountries = rulebookParameters.high_risk_countries;
+    if (highRiskCountries.includes(pii.businessAddress.country)) {
       score += 20;
     }
 

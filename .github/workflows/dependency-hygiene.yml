@@ -1,0 +1,115 @@
+name: Dependency Hygiene Enforcement
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-hygiene:
+    name: Block deprecated or unsafe dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+
+      # -------------------------------------------------
+      # 1. Fail on deprecated packages (direct or transitive)
+      # -------------------------------------------------
+      - name: Block deprecated dependencies
+        run: |
+          set -e
+
+          echo "Scanning for deprecated packages..."
+
+          # npm ls prints deprecation warnings to stderr
+          if npm ls 2>&1 | grep -i "deprecated"; then
+            echo "❌ Deprecated dependency detected"
+            exit 1
+          fi
+
+          echo "✅ No deprecated dependencies detected"
+
+      # -------------------------------------------------
+      # 2. Block known unsafe packages explicitly
+      # -------------------------------------------------
+      - name: Block explicitly forbidden packages
+        run: |
+          set -e
+
+          FORBIDDEN_PACKAGES=(
+            "inflight"
+            "node-fetch@2"
+            "request"
+            "left-pad"
+          )
+
+          for pkg in "${FORBIDDEN_PACKAGES[@]}"; do
+            if npm ls "$pkg" >/dev/null 2>&1; then
+              echo "❌ Forbidden package detected: $pkg"
+              exit 1
+            fi
+          done
+
+          echo "✅ No forbidden packages detected"
+
+      # -------------------------------------------------
+      # 3. Enforce supported Node engine compatibility
+      # -------------------------------------------------
+      - name: Enforce Node engine requirements
+        run: |
+          set -e
+
+          REQUIRED_NODE="20"
+
+          CURRENT_NODE=$(node -v | sed 's/v//')
+          MAJOR_NODE=$(echo "$CURRENT_NODE" | cut -d. -f1)
+
+          if [ "$MAJOR_NODE" -lt "$REQUIRED_NODE" ]; then
+            echo "❌ Node.js version $CURRENT_NODE is not supported"
+            exit 1
+          fi
+
+          echo "✅ Node.js version $CURRENT_NODE is supported"
+
+      # -------------------------------------------------
+      # 4. Enforce clean security audit (no high/critical)
+      # -------------------------------------------------
+      - name: Enforce npm audit policy
+        run: |
+          set -e
+
+          echo "Running npm audit..."
+
+          npm audit --audit-level=moderate
+
+          echo "✅ npm audit passed"
+
+      # -------------------------------------------------
+      # 5. Lockfile integrity check
+      # -------------------------------------------------
+      - name: Ensure package-lock.json is not modified
+        run: |
+          set -e
+
+          if ! git diff --exit-code package-lock.json; then
+            echo "❌ package-lock.json changed during install"
+            exit 1
+          fi
+
+          echo "✅ package-lock.json integrity verified"

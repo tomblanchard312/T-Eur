@@ -1,9 +1,11 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { blockchainService } from '../services/blockchain.js';
 import { authenticate, requirePermission, requireRole } from '../middleware/auth.js';
 import { validate, asyncHandler } from '../middleware/errors.js';
 import { idempotency, strictRateLimiter } from '../middleware/common.js';
 import { logAuditEvent } from '../utils/logger.js';
+import { generateCorrelationId } from '../utils/crypto.js';
 import {
   mintSchema,
   burnSchema,
@@ -35,9 +37,11 @@ router.post(
   idempotency,
   validate(mintSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { to, amount, idempotencyKey } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof mintSchema>;
+    const { to, amount, idempotencyKey } = body;
     
-    const correlationId = `mint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const correlationId = generateCorrelationId('mint');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.mint(to, BigInt(amount), correlationId, userId);
@@ -78,9 +82,11 @@ router.post(
   idempotency,
   validate(burnSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { from, amount, idempotencyKey } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof burnSchema>;
+    const { from, amount, idempotencyKey } = body;
     
-    const correlationId = `burn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const correlationId = generateCorrelationId('burn');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.burn(from, BigInt(amount), correlationId, userId);
@@ -120,9 +126,11 @@ router.post(
   idempotency,
   validate(transferSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { from, to, amount, idempotencyKey } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof transferSchema>;
+    const { from, to, amount, idempotencyKey } = body;
     
-    const correlationId = `transfer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const correlationId = generateCorrelationId('transfer');
     const userId = req.auth!.institutionId;
     
     // For now, the operator performs the transfer
@@ -163,9 +171,11 @@ router.post(
   strictRateLimiter,
   validate(executeWaterfallSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { wallet } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof executeWaterfallSchema>;
+    const { wallet } = body;
     
-    const correlationId = `waterfall-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const correlationId = generateCorrelationId('waterfall');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.executeWaterfall(wallet, correlationId, userId);
@@ -203,9 +213,11 @@ router.post(
   idempotency,
   validate(executeReverseWaterfallSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { wallet, amount, idempotencyKey } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof executeReverseWaterfallSchema>;
+    const { wallet, amount, idempotencyKey } = body;
     
-    const correlationId = `reverse-waterfall-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const correlationId = generateCorrelationId('reverse-waterfall');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.executeReverseWaterfall(wallet, BigInt(amount), correlationId, userId);
@@ -244,6 +256,7 @@ router.get(
   requirePermission('read'),
   validate(getBalanceSchema, 'params'),
   asyncHandler(async (req: Request, res: Response) => {
+    // OWASP: Injection - Use strictly validated path parameters
     const { address } = req.params;
     
     const balance = await blockchainService.balanceOf(address!);

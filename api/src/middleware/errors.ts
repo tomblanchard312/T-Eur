@@ -87,10 +87,10 @@ export function errorHandler(
   const requestId = req.headers['x-request-id'] || 'unknown';
   
   if (err instanceof ApiError) {
-    logger.warn('API Error', {
-      requestId,
-      code: err.code,
-      message: err.message,
+    // OWASP: Security Logging and Monitoring - Log API errors with structured context
+    logger.warn('API_GATEWAY', 'VALIDATION_FAILED', {
+      correlationId: requestId as string,
+      errorCode: err.code,
       statusCode: err.statusCode,
       path: req.path,
       method: req.method,
@@ -108,12 +108,20 @@ export function errorHandler(
   }
 
   // Unexpected errors
-  logger.error('Unexpected error', {
-    requestId,
-    error: err.message,
-    stack: err.stack,
+  // OWASP: Security Logging and Monitoring - Log unexpected errors without leaking sensitive info
+  // Financial System Safety: Preserve full error context in secure logs for forensic analysis.
+  logger.error('API_GATEWAY', 'INTERNAL_SERVER_ERROR', {
+    correlationId: requestId as string,
+    errorCode: 'UNEXPECTED_ERROR',
     path: req.path,
     method: req.method,
+    details: {
+      name: err.name,
+      message: err.message,
+      stack: config.nodeEnv === 'production' ? undefined : err.stack,
+    },
+    // Sanitized: log error name but not full stack trace in production logs
+    resourceId: err.name,
   });
 
   res.status(500).json({

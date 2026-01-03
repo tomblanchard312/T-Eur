@@ -94,20 +94,20 @@ export class FeeCalculationEngine {
       throw new Error('Merchant type required for merchant payment fee calculation');
     }
 
-    // Base interchange fee varies by merchant type
+    // Base interchange fee varies by merchant type - loaded from governance parameters
     let interchangeBasisPoints: number;
     switch (calculation.merchantType) {
       case 'retail':
-        interchangeBasisPoints = 150; // 1.5%
+        interchangeBasisPoints = rulebookParameters.fee_merchant_retail_bps;
         break;
       case 'hospitality':
-        interchangeBasisPoints = 120; // 1.2%
+        interchangeBasisPoints = rulebookParameters.fee_merchant_hospitality_bps;
         break;
       case 'ecommerce':
-        interchangeBasisPoints = 180; // 1.8%
+        interchangeBasisPoints = rulebookParameters.fee_merchant_ecommerce_bps;
         break;
       default:
-        interchangeBasisPoints = 150; // Default 1.5%
+        interchangeBasisPoints = rulebookParameters.fee_merchant_retail_bps;
     }
 
     const interchangeFee = (calculation.amount * BigInt(interchangeBasisPoints)) / BigInt(10000);
@@ -118,12 +118,12 @@ export class FeeCalculationEngine {
 
     // Instant settlement fee
     if (calculation.isInstantSettlement) {
-      additionalFees += BigInt(50); // €0.50 fixed fee
+      additionalFees += BigInt(rulebookParameters.fee_instant_settlement_fixed_cents);
     }
 
     // Cross-border fee
     if (calculation.isCrossBorder) {
-      const crossBorderFee = (calculation.amount * BigInt(50)) / BigInt(10000); // 0.5%
+      const crossBorderFee = (calculation.amount * BigInt(rulebookParameters.fee_cross_border_bps)) / BigInt(10000);
       additionalFees += crossBorderFee;
     }
 
@@ -136,8 +136,8 @@ export class FeeCalculationEngine {
         interchangeFee,
         schemeFee,
         merchantFee,
-        ...(calculation.isInstantSettlement && { instantSettlementFee: BigInt(50) }),
-        ...(calculation.isCrossBorder && { crossBorderFee: (calculation.amount * BigInt(50)) / BigInt(10000) }),
+        ...(calculation.isInstantSettlement && { instantSettlementFee: BigInt(rulebookParameters.fee_instant_settlement_fixed_cents) }),
+        ...(calculation.isCrossBorder && { crossBorderFee: (calculation.amount * BigInt(rulebookParameters.fee_cross_border_bps)) / BigInt(10000) }),
       },
       netAmount,
       feeBasis: FeeBasis.BASIS_POINTS,
@@ -148,9 +148,9 @@ export class FeeCalculationEngine {
    * Calculate ATM withdrawal fees
    */
   private calculateATMFee(calculation: FeeCalculation): FeeResult {
-    // ATM fees: €2.50 fixed + 1% of withdrawal amount
-    const fixedFee = BigInt(250); // €2.50
-    const percentageFee = (calculation.amount * BigInt(100)) / BigInt(10000); // 1%
+    // ATM fees: fixed + percentage of withdrawal amount - loaded from governance parameters
+    const fixedFee = BigInt(rulebookParameters.fee_atm_fixed_cents);
+    const percentageFee = (calculation.amount * BigInt(rulebookParameters.fee_atm_bps)) / BigInt(10000);
 
     const totalFee = fixedFee + percentageFee;
     const netAmount = calculation.amount - totalFee;
@@ -171,9 +171,9 @@ export class FeeCalculationEngine {
    * Calculate cross-border transfer fees
    */
   private calculateCrossBorderFee(calculation: FeeCalculation): FeeResult {
-    // Cross-border: 0.5% + €1.00 fixed fee
-    const percentageFee = (calculation.amount * BigInt(50)) / BigInt(10000); // 0.5%
-    const fixedFee = BigInt(100); // €1.00
+    // Cross-border: percentage + fixed fee - loaded from governance parameters
+    const percentageFee = (calculation.amount * BigInt(rulebookParameters.fee_cross_border_bps)) / BigInt(10000);
+    const fixedFee = BigInt(rulebookParameters.fee_instant_settlement_fixed_cents); // Reusing instant settlement fixed fee for cross-border fixed component
 
     const totalFee = percentageFee + fixedFee;
     const netAmount = calculation.amount - totalFee;

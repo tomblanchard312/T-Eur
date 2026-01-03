@@ -1,0 +1,85 @@
+name: Copilot Instructions Integrity
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  enforce-copilot-instructions:
+    name: Enforce Copilot instructions integrity
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Copilot instructions file exists
+        run: |
+          set -e
+          test -f .github/copilot-instructions.md
+
+      - name: Block weakening language and placeholders
+        run: |
+          set -e
+
+          FILE=".github/copilot-instructions.md"
+
+          echo "Scanning $FILE for forbidden patterns..."
+
+          # Forbidden: TODOs, placeholders, optionality language, best-effort softening
+          FORBIDDEN_REGEX="(?i)(\bTODO\b|\bFIXME\b|\bplaceholder\b|\bstub\b|\bWIP\b|\bbest effort\b|\boptional\b|\bif possible\b|\bshould\b)"
+
+          python - <<'PY'
+          import re, sys, pathlib
+
+          file_path = pathlib.Path(".github/copilot-instructions.md")
+          text = file_path.read_text(encoding="utf-8", errors="strict")
+
+          pattern = re.compile(r"(?i)(\bTODO\b|\bFIXME\b|\bplaceholder\b|\bstub\b|\bWIP\b|\bbest effort\b|\boptional\b|\bif possible\b)")
+          matches = pattern.findall(text)
+
+          if matches:
+              print("Forbidden weakening or placeholder language found:", sorted(set(m.lower() for m in matches)))
+              sys.exit(1)
+
+          # Enforce presence of non-negotiable phrases that anchor the policy
+          required_phrases = [
+              "Hard constraints:",
+              "No TODOs, stubs, placeholders",
+              "Silent failure is forbidden",
+              "Structured JSON",
+              "No deprecated or unsupported dependencies",
+              "Node 20"
+          ]
+
+          missing = [p for p in required_phrases if p not in text]
+          if missing:
+              print("Required policy anchors are missing:", missing)
+              sys.exit(1)
+
+          print("Copilot instructions integrity checks passed.")
+          PY
+
+      - name: Require security review when instructions change
+        if: github.event_name == 'pull_request'
+        run: |
+          set -e
+
+          echo "Checking whether Copilot instructions were modified in this PR..."
+
+          git fetch origin ${{ github.base_ref }} --depth=1
+
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "^\.github/copilot-instructions\.md$"; then
+            echo "Copilot instructions were modified. Enforcing CODEOWNERS or review policy."
+
+            # This gate is informational unless you enforce reviews via branch protection.
+            # Recommended: protect main and require CODEOWNERS review for .github/copilot-instructions.md
+            echo "Action required: Configure branch protection to require CODEOWNERS approval."
+          else
+            echo "Copilot instructions were not modified."
+          fi

@@ -32,14 +32,72 @@ const ALLOWED_PURPOSES: Set<ExrPurpose> = new Set(['reporting', 'analytics']);
 /**
  * Verify access purpose. Throws ExrAccessError if not allowed.
  */
-export function verifyExrAccess(purpose: ExrPurpose, caller?: string) {
+export function verifyExrAccess(purpose: ExrPurpose, caller?: string): void {
   if (ALLOWED_PURPOSES.has(purpose)) return;
 
   const msg = `EXR access denied for purpose="${purpose}"${caller ? ` caller="${caller}"` : ''}. ` +
     'ECB reference rates are published for information purposes only and must not be used for transaction pricing or settlement.';
   // Explicitly log the denial for audit trails
-  logger.error('EXR access denied', { purpose, caller, code: 'EXR_ACCESS_DENIED' });
+  // OWASP: Security Logging and Monitoring - Log authorization failures
+  logger.error('EXR_SERVICE', 'AUTHORIZATION_DENIED', { 
+    purpose, 
+    caller, 
+    errorCode: 'EXR_ACCESS_DENIED' 
+  });
   throw new ExrAccessError(msg);
+}
+
+interface ExrObservation {
+  period: string;
+  rate_decimal: string;
+}
+
+interface NormalizedExr {
+  series_id: string;
+  observations: ExrObservation[];
+  advisory: boolean;
+  advisory_note: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Read the last line of a file efficiently without loading the whole file into memory.
+ * This is critical for production-grade systems to avoid DoS via large files.
+ * Uses a fixed-size buffer to ensure bounded memory usage.
+ */
+async function readLastLine(filePath: string): Promise<string | null> {
+  let handle: fs.promises.FileHandle | null = null;
+  try {
+    const stats = await fs.promises.stat(filePath);
+    if (stats.size === 0) return null;
+
+    handle = await fs.promises.open(filePath, 'r');
+    // Read the last 4KB of the file. Most EXR JSONL lines are < 1KB.
+    const bufferSize = Math.min(stats.size, 4096);
+    const buffer = Buffer.alloc(bufferSize);
+    
+    const { bytesRead } = await handle.read(buffer, 0, bufferSize, stats.size - bufferSize);
+    const content = buffer.toString('utf8', 0, bytesRead);
+    
+    const lines = content.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length === 0) return null;
+    
+    return lines[lines.length - 1] ?? null;
+  } catch (error) {
+    // OWASP: Security Logging and Monitoring - Log file operation failures
+    logger.error('EXR_SERVICE', 'FILE_OPERATION_FAILED', { 
+      path: filePath, 
+      errorCode: String(error) 
+    });
+    return null;
+  } finally {
+    if (handle) {
+      await handle.close().catch(err => logger.error('EXR_SERVICE', 'FILE_OPERATION_FAILED', { 
+        path: filePath, 
+        errorCode: String(err) 
+      }));
+    }
+  }
 }
 
 /**
@@ -54,31 +112,75 @@ export async function getNormalizedExrForPurpose(opts: {
   mirrorDir: string; // directory where ingestion writes jsonl files
   purpose: ExrPurpose;
   caller?: string; // optional identifier for logging/audit
-}) {
+}): Promise<NormalizedExr | null> {
   verifyExrAccess(opts.purpose, opts.caller);
 
-  const file = path.join(opts.mirrorDir, `${opts.seriesId.replace(/[^a-zA-Z0-9-_]/g, '_')}.jsonl`);
+  // Strict sanitization of seriesId to prevent path traversal and injection
+  if (!/^[a-zA-Z0-9._-]+$/.test(opts.seriesId)) {
+    // OWASP: Injection - Log validation failures
+    logger.error('EXR_SERVICE', 'VALIDATION_FAILED', { 
+      seriesId: opts.seriesId, 
+      caller: opts.caller 
+    });
+    throw new ExrAccessError(`Invalid seriesId format: ${opts.seriesId}`);
+  }
+
+  const fileName = `${opts.seriesId}.jsonl`;
+  const filePath = path.join(opts.mirrorDir, fileName);
+
+  // Security: Ensure the resolved path is still within the mirror directory
+  const resolvedPath = path.resolve(filePath);
+  const resolvedMirrorDir = path.resolve(opts.mirrorDir);
+  if (!resolvedPath.startsWith(resolvedMirrorDir)) {
+    // OWASP: Security Logging and Monitoring - Log security alerts
+    logger.error('EXR_SERVICE', 'SECURITY_ALERT', { 
+      seriesId: opts.seriesId, 
+      path: filePath, 
+      caller: opts.caller 
+    });
+    throw new ExrAccessError('Invalid EXR file path');
+  }
+
   try {
-    const exists = await fs.promises.stat(file).then(s => s.isFile()).catch(() => false);
-    if (!exists) {
-      logger.warn('EXR normalized file not found', { seriesId: opts.seriesId, file });
+    const lastLine = await readLastLine(resolvedPath);
+    if (!lastLine) {
+      logger.warn('EXR_SERVICE', 'FILE_OPERATION_FAILED', { 
+        seriesId: opts.seriesId, 
+        path: filePath 
+      });
       return null;
     }
-    const content = await fs.promises.readFile(file, 'utf8');
-    const lines = content.split(/\r?\n/).filter(Boolean);
-    if (lines.length === 0) return null;
-    const lastLine = lines[lines.length - 1]!;
+
     const last = JSON.parse(lastLine);
-    // Ensure advisory flag present
-    last.advisory = true;
-    last.advisory_note = 'ECB reference rates are published for information purposes only and must not be used for transaction pricing or settlement.';
-    // Guarantee we do not coerce rates into native numbers here
+    
+    // Enforce advisory metadata
+    const result: NormalizedExr = {
+      ...last,
+      advisory: true,
+      advisory_note: 'ECB reference rates are published for information purposes only and must not be used for transaction pricing or settlement.',
+      series_id: String(last.series_id || opts.seriesId),
+      observations: []
+    };
+
+    // Guarantee we do not coerce rates into native numbers here to prevent precision loss or accidental use in math
     if (Array.isArray(last.observations)) {
-      last.observations = last.observations.map((o: any) => ({ period: o.period, rate_decimal: String(o.rate_decimal ?? o.value ?? '') }));
+      result.observations = last.observations.map((o: unknown) => {
+        const obs = o as Record<string, unknown>;
+        return {
+          period: String(obs['period'] || ''),
+          rate_decimal: String(obs['rate_decimal'] ?? obs['value'] ?? '')
+        };
+      });
     }
-    return last;
+
+    return result;
   } catch (e) {
-    logger.error('Failed to read EXR normalized file', { seriesId: opts.seriesId, file, error: String(e) });
+    // OWASP: Security Logging and Monitoring - Log internal errors
+    logger.error('EXR_SERVICE', 'INTERNAL_SERVER_ERROR', { 
+      seriesId: opts.seriesId, 
+      path: filePath, 
+      errorCode: String(e) 
+    });
     throw e;
   }
 }
@@ -90,7 +192,11 @@ export async function getNormalizedExrForPurpose(opts: {
 export function denyExrForSettlement(caller?: string): never {
   const msg = 'Access to ECB EXR data is prohibited in settlement and authorization code paths. ' +
     'Use approved internal reference data workflows and operator-reviewed parameters.';
-  logger.error('Prohibited EXR access attempt from settlement/authorization', { caller, code: 'EXR_PROHIBITED' });
+  // OWASP: Security Logging and Monitoring - Log security alerts for prohibited access
+  logger.error('EXR_SERVICE', 'SECURITY_ALERT', { 
+    caller, 
+    errorCode: 'EXR_PROHIBITED' 
+  });
   throw new ExrAccessError(msg);
 }
 

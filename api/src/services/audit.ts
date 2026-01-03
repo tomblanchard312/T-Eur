@@ -1,14 +1,101 @@
-import { logAuditEvent } from '../utils/logger.js';
+import fs from 'fs';
+import readline from 'readline';
+import path from 'path';
+import { logger, logAuditEvent, AuditAction } from '../utils/logger.js';
 
 /**
  * Audit service for managing transaction and system audit logs
  */
 export class AuditService {
   /**
+   * Query audit logs from the log file.
+   * This is a production-grade implementation that reads the log file line-by-line
+   * to avoid memory issues with large log files.
+   */
+  async queryLogs(filters: {
+    startDate?: string;
+    endDate?: string;
+    userId?: string;
+    action?: string;
+    resource?: string;
+    result?: 'success' | 'failure';
+    correlationId?: string;
+    limit: number;
+    offset: number;
+  }): Promise<{ logs: any[]; total: number }> {
+    const logPath = path.resolve('logs/audit.log');
+    const logs: any[] = [];
+    let totalMatching = 0;
+
+    try {
+      await fs.promises.access(logPath, fs.constants.R_OK);
+    } catch {
+      return { logs: [], total: 0 };
+    }
+
+    const fileStream = fs.createReadStream(logPath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    });
+
+    const startTime = filters.startDate ? new Date(filters.startDate).getTime() : 0;
+    const endTime = filters.endDate ? new Date(filters.endDate).getTime() : Infinity;
+
+    // Resource management: limit the total number of lines scanned to prevent DoS on massive log files.
+    // 100,000 lines is a reasonable upper bound for a single request in this context.
+    const MAX_LINES_TO_SCAN = 100000;
+    let linesScanned = 0;
+
+    try {
+      for await (const line of rl) {
+        linesScanned++;
+        if (linesScanned > MAX_LINES_TO_SCAN) {
+          logger.warn('AUDIT_SERVICE', 'INTERNAL_SERVER_ERROR', { 
+            errorCode: 'SCAN_LIMIT_REACHED',
+            details: { maxLines: MAX_LINES_TO_SCAN, filters }
+          });
+          break;
+        }
+
+        if (!line.trim()) continue;
+        try {
+          const entry = JSON.parse(line);
+          const entryTime = new Date(entry.timestamp).getTime();
+
+          // Apply filters
+          if (entryTime < startTime || entryTime > endTime) continue;
+          if (filters.userId && entry.actor !== filters.userId) continue;
+          if (filters.action && entry.action !== filters.action) continue;
+          if (filters.resource && entry.resource !== filters.resource) continue;
+          if (filters.result && entry.result !== filters.result) continue;
+          if (filters.correlationId && entry.resourceId !== filters.correlationId) continue;
+
+          if (totalMatching >= filters.offset && logs.length < filters.limit) {
+            logs.push(entry);
+          }
+          
+          totalMatching++;
+        } catch (e) {
+          // Skip malformed lines
+          continue;
+        }
+      }
+    } finally {
+      rl.close();
+      fileStream.destroy();
+    }
+
+    return {
+      logs,
+      total: totalMatching
+    };
+  }
+
+  /**
    * Log a transaction event with full context
    */
   async logTransactionEvent(
-    eventType: string,
     correlationId: string,
     userId: string | undefined,
     transactionDetails: {
@@ -26,8 +113,15 @@ export class AuditService {
       metadata?: Record<string, any>;
     }
   ) {
+    const actionMap: Record<string, AuditAction> = {
+      initiated: 'TRANSACTION_INITIATED',
+      pending: 'TRANSACTION_PENDING',
+      completed: 'TRANSACTION_COMPLETED',
+      failed: 'TRANSACTION_FAILED',
+    };
+
     logAuditEvent({
-      action: `TRANSACTION_${eventType.toUpperCase()}`,
+      action: actionMap[transactionDetails.status] || 'TRANSACTION_INITIATED',
       actor: userId || 'system',
       resource: 'transaction',
       resourceId: correlationId,
@@ -54,7 +148,6 @@ export class AuditService {
    * Log a compliance event
    */
   async logComplianceEvent(
-    eventType: string,
     correlationId: string,
     userId: string | undefined,
     complianceDetails: {
@@ -65,8 +158,15 @@ export class AuditService {
       details?: Record<string, any>;
     }
   ) {
+    const actionMap: Record<string, AuditAction> = {
+      pass: 'COMPLIANCE_CHECK_PASSED',
+      fail: 'COMPLIANCE_CHECK_FAILED',
+      warning: 'COMPLIANCE_CHECK_WARNING',
+      review_required: 'COMPLIANCE_CHECK_REVIEW_REQUIRED',
+    };
+
     logAuditEvent({
-      action: `COMPLIANCE_${eventType.toUpperCase()}`,
+      action: actionMap[complianceDetails.result] || 'COMPLIANCE_CHECK_PASSED',
       actor: userId || 'system',
       resource: 'compliance',
       resourceId: correlationId,
@@ -85,7 +185,6 @@ export class AuditService {
    * Log a security event
    */
   async logSecurityEvent(
-    eventType: string,
     correlationId: string,
     userId: string | undefined,
     securityDetails: {
@@ -96,7 +195,7 @@ export class AuditService {
     }
   ) {
     logAuditEvent({
-      action: `SECURITY_${eventType.toUpperCase()}`,
+      action: 'SECURITY_THREAT_DETECTED',
       actor: userId || 'system',
       resource: 'security',
       resourceId: correlationId,
@@ -114,7 +213,6 @@ export class AuditService {
    * Log an operational event
    */
   async logOperationalEvent(
-    eventType: string,
     correlationId: string,
     userId: string | undefined,
     operationalDetails: {
@@ -125,8 +223,14 @@ export class AuditService {
       details?: Record<string, any>;
     }
   ) {
+    const actionMap: Record<string, AuditAction> = {
+      success: 'OPERATIONAL_SUCCESS',
+      failure: 'OPERATIONAL_FAILURE',
+      degraded: 'OPERATIONAL_DEGRADED',
+    };
+
     logAuditEvent({
-      action: `OPERATIONAL_${eventType.toUpperCase()}`,
+      action: actionMap[operationalDetails.result] || 'OPERATIONAL_SUCCESS',
       actor: userId || 'system',
       resource: 'operational',
       resourceId: correlationId,

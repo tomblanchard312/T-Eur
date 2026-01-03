@@ -5,6 +5,8 @@ import { AuthenticationError, AuthorizationError } from './errors.js';
 import { logger } from '../utils/logger.js';
 
 // Simulated API key store (in production, use database)
+// Resource management: explicit bound for in-memory key store to prevent DoS
+const MAX_API_KEYS = 1000;
 const apiKeys = new Map<string, ApiKeyRecord>();
 
 interface ApiKeyRecord {
@@ -40,6 +42,11 @@ declare module 'express-serve-static-core' {
 
 // Initialize demo API keys for development
 function initDemoKeys() {
+  // Security: Never initialize demo keys in production
+  if (config.nodeEnv === 'production') {
+    return;
+  }
+
   const demoKeys: ApiKeyRecord[] = [
     {
       keyId: 'demo-ecb-key',
@@ -83,27 +90,43 @@ function initDemoKeys() {
     },
   ];
 
-  demoKeys.forEach(key => apiKeys.set(key.keyId, key));
-  logger.info('Initialized demo API keys', { count: demoKeys.length });
+  demoKeys.forEach(key => {
+    if (apiKeys.size < MAX_API_KEYS) {
+      apiKeys.set(key.keyId, key);
+    } else {
+      // OWASP: Security Logging and Monitoring - Log resource limit issues
+      logger.error('AUTH_MIDDLEWARE', 'INTERNAL_SERVER_ERROR', { 
+        resourceId: key.keyId, 
+        errorCode: 'API_KEY_LIMIT_EXCEEDED' 
+      });
+    }
+  });
+  logger.info('AUTH_MIDDLEWARE', 'RESOURCE_CREATED', { 
+    count: Math.min(demoKeys.length, MAX_API_KEYS) 
+  });
 }
 
 initDemoKeys();
 
 // API Key authentication
 export function apiKeyAuth(req: Request, _res: Response, next: NextFunction) {
+  // OWASP: Broken Authentication - Use secure header for API keys
   const apiKey = req.headers[config.auth.apiKeyHeader.toLowerCase()] as string;
   
   if (!apiKey) {
     return next(new AuthenticationError('API key required'));
   }
 
+  // OWASP: Broken Authentication - Constant-time lookup via Map
   const keyRecord = apiKeys.get(apiKey);
   
   if (!keyRecord) {
-    logger.warn('Invalid API key attempt', { 
-      ip: req.ip, 
+    // OWASP: Security Logging and Monitoring - Log failed auth attempts
+    logger.warn('AUTH_MIDDLEWARE', 'AUTHENTICATION_FAILED', { 
       path: req.path,
-      keyPrefix: apiKey.substring(0, 8),
+      method: req.method,
+      // Only log prefix to avoid leaking full key in logs
+      resourceId: apiKey.substring(0, 8),
     });
     return next(new AuthenticationError('Invalid API key'));
   }
@@ -112,6 +135,7 @@ export function apiKeyAuth(req: Request, _res: Response, next: NextFunction) {
     return next(new AuthenticationError('API key is inactive'));
   }
 
+  // OWASP: Broken Access Control - Populate auth context for downstream checks
   req.auth = {
     institutionId: keyRecord.institutionId,
     institutionName: keyRecord.institutionName,
@@ -124,6 +148,7 @@ export function apiKeyAuth(req: Request, _res: Response, next: NextFunction) {
 
 // JWT authentication (for session-based access)
 export function jwtAuth(req: Request, _res: Response, next: NextFunction) {
+  // OWASP: Broken Authentication - Use standard Bearer token
   const authHeader = req.headers.authorization;
   
   if (!authHeader?.startsWith('Bearer ')) {
@@ -132,18 +157,8 @@ export function jwtAuth(req: Request, _res: Response, next: NextFunction) {
 
   const token = authHeader.substring(7);
 
-  // Check for admin override token (for testing)
-  if (token === process.env.ADMIN_OVERRIDE_TOKEN) {
-    req.auth = {
-      institutionId: 'admin-override',
-      institutionName: 'Admin Override',
-      roles: ['ADMIN'],
-      permissions: ['*'],
-    };
-    return next();
-  }
-
   try {
+    // OWASP: Sensitive Data Exposure - Verify JWT with strong secret
     const payload = jwt.verify(token, config.auth.jwtSecret) as JwtPayload;
     
     req.auth = {
@@ -155,6 +170,13 @@ export function jwtAuth(req: Request, _res: Response, next: NextFunction) {
 
     next();
   } catch (error) {
+    // OWASP: Security Logging and Monitoring - Log JWT failures
+    logger.warn('AUTH_MIDDLEWARE', 'AUTHENTICATION_FAILED', { 
+      path: req.path,
+      method: req.method,
+      errorCode: error instanceof jwt.TokenExpiredError ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN'
+    });
+    
     if (error instanceof jwt.TokenExpiredError) {
       return next(new AuthenticationError('Token expired'));
     }
@@ -189,10 +211,12 @@ export function requirePermission(...requiredPermissions: string[]) {
     );
 
     if (!hasPermission) {
-      logger.warn('Permission denied', {
+      logger.warn('API_GATEWAY', 'AUTHORIZATION_DENIED', {
         institutionId: req.auth.institutionId,
-        required: requiredPermissions,
-        actual: req.auth.permissions,
+        details: {
+          required: requiredPermissions.join(','),
+          actual: req.auth.permissions.join(','),
+        },
         path: req.path,
       });
       return next(new AuthorizationError(

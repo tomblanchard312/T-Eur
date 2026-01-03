@@ -13,17 +13,17 @@ export const registerWalletSchema = z.object({
   linkedBankAccount: ethereumAddress.optional(),
   kycHash: bytes32,
   idempotencyKey: z.string().uuid(),
-});
+}).strict(); // OWASP: Injection Risks - Reject unknown fields
 
 export const deactivateWalletSchema = z.object({
   wallet: ethereumAddress,
   reason: z.string().min(10).max(500),
-});
+}).strict();
 
 export const updateLinkedBankSchema = z.object({
   wallet: ethereumAddress,
   newBankAccount: ethereumAddress,
-});
+}).strict();
 
 // ============ Token Operations ============
 
@@ -31,32 +31,32 @@ export const mintSchema = z.object({
   to: ethereumAddress,
   amount: amount.describe('Amount in euro cents (e.g., 100000 = €1,000.00)'),
   idempotencyKey: z.string().uuid(),
-});
+}).strict();
 
 export const burnSchema = z.object({
   from: ethereumAddress,
   amount: amount,
   idempotencyKey: z.string().uuid(),
-});
+}).strict();
 
 export const transferSchema = z.object({
   from: ethereumAddress,
   to: ethereumAddress,
   amount: amount,
   idempotencyKey: z.string().uuid(),
-});
+}).strict();
 
 // ============ Waterfall Operations ============
 
 export const executeWaterfallSchema = z.object({
   wallet: ethereumAddress,
-});
+}).strict();
 
 export const executeReverseWaterfallSchema = z.object({
   wallet: ethereumAddress,
   amount: amount,
   idempotencyKey: z.string().uuid(),
-});
+}).strict();
 
 // ============ Conditional Payments ============
 
@@ -68,37 +68,37 @@ export const createConditionalPaymentSchema = z.object({
   expiresAt: z.coerce.number().int().positive(),
   arbiter: ethereumAddress.optional(),
   idempotencyKey: z.string().uuid(),
-});
+}).strict();
 
 export const confirmDeliverySchema = z.object({
   paymentId: bytes32,
   proof: bytes32,
-});
+}).strict();
 
 export const releasePaymentSchema = z.object({
   paymentId: bytes32,
   proof: bytes32,
-});
+}).strict();
 
 export const disputePaymentSchema = z.object({
   paymentId: bytes32,
   reason: z.string().min(10).max(1000),
-});
+}).strict();
 
 export const resolveDisputeSchema = z.object({
   paymentId: bytes32,
   releaseToPayee: z.boolean(),
-});
+}).strict();
 
 // ============ Query Schemas ============
 
 export const getBalanceSchema = z.object({
   address: ethereumAddress,
-});
+}).strict();
 
 export const getWalletInfoSchema = z.object({
   address: ethereumAddress,
-});
+}).strict();
 
 export const getPaymentSchema = z.object({
   paymentId: bytes32,

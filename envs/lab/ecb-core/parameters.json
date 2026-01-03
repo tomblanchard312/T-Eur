@@ -7,5 +7,18 @@
 	"fee_transfer_basis_points": 10,
 	"governance_change_delay_seconds": 86400,
 	"offline_reconciliation_window_seconds": 86400,
-	"offline_daily_velocity_per_wallet": 100000
+	"offline_daily_velocity_per_wallet": 100000,
+	"fee_merchant_retail_bps": 150,
+	"fee_merchant_hospitality_bps": 120,
+	"fee_merchant_ecommerce_bps": 180,
+	"fee_instant_settlement_fixed_cents": 50,
+	"fee_cross_border_bps": 50,
+	"fee_atm_fixed_cents": 250,
+	"fee_atm_bps": 100,
+	"high_risk_countries": [
+		"CountryX",
+		"CountryY"
+	],
+	"suspicious_volume_threshold_cents": 5000000,
+	"default_arbiter_address": "0x0000000000000000000000000000000000000000"
 }

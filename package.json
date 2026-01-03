@@ -1,5 +1,9 @@
 {
   "devDependencies": {
-    "@types/supertest": "^6.0.3"
+    "@types/supertest": "^6.0.3",
+    "ajv": "^8.17.1",
+    "eslint": "^9.39.2",
+    "supertest": "^7.1.4",
+    "vitest": "^4.0.16"
   }
 }

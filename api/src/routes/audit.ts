@@ -3,6 +3,7 @@ import { authenticate, requirePermission, requireRole } from '../middleware/auth
 import { validate, asyncHandler } from '../middleware/errors.js';
 import { strictRateLimiter } from '../middleware/common.js';
 import { logAuditEvent } from '../utils/logger.js';
+import { auditService } from '../services/audit.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -15,18 +16,16 @@ router.use(requireRole('ECB_ADMIN'));
  * Query audit logs schema
  */
 const queryAuditLogsSchema = z.object({
-  query: z.object({
-    startDate: z.string().optional(),
-    endDate: z.string().optional(),
-    userId: z.string().optional(),
-    action: z.string().optional(),
-    resource: z.string().optional(),
-    result: z.enum(['success', 'failure']).optional(),
-    correlationId: z.string().optional(),
-    limit: z.number().min(1).max(1000).default(100),
-    offset: z.number().min(0).default(0),
-  }),
-});
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  userId: z.string().optional(),
+  action: z.string().optional(),
+  resource: z.string().optional(),
+  result: z.enum(['success', 'failure']).optional(),
+  correlationId: z.string().optional(),
+  limit: z.coerce.number().min(1).max(1000).default(100),
+  offset: z.coerce.number().min(0).default(0),
+}).strict(); // OWASP: Injection Risks - Reject unknown fields
 
 /**
  * @openapi
@@ -41,46 +40,39 @@ router.get(
   '/logs',
   requirePermission('audit_read'),
   strictRateLimiter,
-  validate(queryAuditLogsSchema),
+  validate(queryAuditLogsSchema, 'query'),
   asyncHandler(async (req: Request, res: Response) => {
-    const {
-      startDate,
-      endDate,
-      userId,
-      action,
-      resource,
-      result,
-      correlationId,
-      limit,
-      offset,
-    } = req.query as any;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    // Use validated data from req.query
+    const query = req.query as unknown as z.infer<typeof queryAuditLogsSchema>;
 
-    // In a real implementation, this would query a database or log aggregation system
-    // For now, we'll return a placeholder response
-    const auditLogs = [
-      {
-        id: 'audit-1',
-        timestamp: new Date().toISOString(),
-        action: 'TOKENS_MINTED',
-        actor: 'ecb-admin',
-        resource: 'token',
-        resourceId: '0x123...',
-        result: 'success',
-        correlationId: 'mint-1234567890-abc123',
-        details: {
-          amount: '10000',
-          amountFormatted: '€100.00',
-        },
-      },
-    ];
+    const { logs, total } = await auditService.queryLogs({
+      startDate: query.startDate,
+      endDate: query.endDate,
+      userId: query.userId,
+      action: query.action,
+      resource: query.resource,
+      result: query.result,
+      correlationId: query.correlationId,
+      limit: query.limit,
+      offset: query.offset,
+    });
 
     logAuditEvent({
       action: 'AUDIT_LOGS_QUERIED',
       actor: req.auth!.institutionId,
       resource: 'audit',
       details: {
-        query: { startDate, endDate, userId, action, limit, offset },
-        resultsCount: auditLogs.length,
+        query: { 
+          startDate: query.startDate, 
+          endDate: query.endDate, 
+          userId: query.userId, 
+          action: query.action, 
+          limit: query.limit, 
+          offset: query.offset 
+        },
+        resultsCount: logs.length,
+        totalMatching: total,
       },
       result: 'success',
     });
@@ -88,11 +80,11 @@ router.get(
     res.json({
       success: true,
       data: {
-        logs: auditLogs,
+        logs,
         pagination: {
-          limit,
-          offset,
-          total: auditLogs.length, // In real implementation, this would be the total count
+          limit: query.limit,
+          offset: query.offset,
+          total,
         },
       },
     });

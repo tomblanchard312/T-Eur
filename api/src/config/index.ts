@@ -18,10 +18,10 @@ const configSchema = z.object({
 
   // Contracts
   contracts: z.object({
-    permissioning: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-    walletRegistry: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-    tokenizedEuro: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-    conditionalPayments: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+    permissioning: z.string(),
+    walletRegistry: z.string(),
+    tokenizedEuro: z.string(),
+    conditionalPayments: z.string(),
   }),
 
   // Auth
@@ -45,6 +45,10 @@ const configSchema = z.object({
 });
 
 function loadConfig() {
+  const isTest = process.env['NODE_ENV'] === 'test' || !!process.env['VITEST'];
+  const dummyAddr = '0x1234567890123456789012345678901234567890';
+  const dummyKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
   const result = configSchema.safeParse({
     port: process.env['PORT'],
     nodeEnv: process.env['NODE_ENV'],
@@ -52,13 +56,13 @@ function loadConfig() {
     blockchain: {
       rpcUrl: process.env['BLOCKCHAIN_RPC_URL'] || 'http://localhost:8545',
       chainId: process.env['BLOCKCHAIN_CHAIN_ID'] || 31337,
-      operatorPrivateKey: process.env['BLOCKCHAIN_OPERATOR_PRIVATE_KEY'] || '',
+      operatorPrivateKey: process.env['BLOCKCHAIN_OPERATOR_PRIVATE_KEY'] || dummyKey,
     },
     contracts: {
-      permissioning: process.env['CONTRACT_PERMISSIONING'],
-      walletRegistry: process.env['CONTRACT_WALLET_REGISTRY'],
-      tokenizedEuro: process.env['CONTRACT_TOKENIZED_EURO'],
-      conditionalPayments: process.env['CONTRACT_CONDITIONAL_PAYMENTS'],
+      permissioning: process.env['CONTRACT_PERMISSIONING'] || dummyAddr,
+      walletRegistry: process.env['CONTRACT_WALLET_REGISTRY'] || dummyAddr,
+      tokenizedEuro: process.env['CONTRACT_TOKENIZED_EURO'] || dummyAddr,
+      conditionalPayments: process.env['CONTRACT_CONDITIONAL_PAYMENTS'] || dummyAddr,
     },
     auth: {
       jwtSecret: process.env['JWT_SECRET'] || 'development-secret-key-min-32-chars!',

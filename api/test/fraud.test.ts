@@ -28,7 +28,11 @@ beforeAll(async () => {
 
 describe('fraud endpoints', () => {
   it('creates an alert for high amount', async () => {
-    const tx = { amount: 200000, from: '0xabc', to: '0xdef' }
+    const tx = { 
+      amount: 200000, 
+      from: '0x' + 'a'.repeat(40), 
+      to: '0x' + 'b'.repeat(40) 
+    }
     const res = await request(app).post('/api/v1/fraud/analyze').send(tx)
     expect([201, 204]).toContain(res.status)
     if (res.status === 201) {
@@ -38,7 +42,11 @@ describe('fraud endpoints', () => {
 
   it('can override an alert', async () => {
     // create alert first
-    const tx = { amount: 200000, from: '0xaaa', to: '0xbbb' }
+    const tx = { 
+      amount: 200000, 
+      from: '0x' + 'c'.repeat(40), 
+      to: '0x' + 'd'.repeat(40) 
+    }
     const create = await request(app).post('/api/v1/fraud/analyze').send(tx)
     if (create.status !== 201) return
     const id = create.body.id

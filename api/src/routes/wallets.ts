@@ -1,9 +1,11 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { blockchainService, WalletType } from '../services/blockchain.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate, asyncHandler, NotFoundError } from '../middleware/errors.js';
 import { idempotency, strictRateLimiter } from '../middleware/common.js';
 import { logAuditEvent } from '../utils/logger.js';
+import { generateCorrelationId } from '../utils/crypto.js';
 import {
   registerWalletSchema,
   deactivateWalletSchema,
@@ -39,12 +41,15 @@ router.post(
   idempotency,
   validate(registerWalletSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { wallet, walletType, linkedBankAccount, kycHash, idempotencyKey } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    // Use validated data from req.body
+    const body = req.body as z.infer<typeof registerWalletSchema>;
+    const { wallet, walletType, linkedBankAccount, kycHash, idempotencyKey } = body;
     
     const walletTypeEnum = WalletType[walletType as keyof typeof WalletType];
     const linkedBank = linkedBankAccount || wallet; // Self-linked if not specified
 
-    const correlationId = `register-wallet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const correlationId = generateCorrelationId('register-wallet');
     const userId = req.auth!.institutionId;
 
     const result = await blockchainService.registerWallet(
@@ -89,6 +94,7 @@ router.get(
   requirePermission('read'),
   validate(getWalletInfoSchema, 'params'),
   asyncHandler(async (req: Request, res: Response) => {
+    // OWASP: Injection - Use strictly validated path parameters
     const { address } = req.params;
     
     const isRegistered = await blockchainService.isRegistered(address!);
@@ -128,6 +134,7 @@ router.get(
   requirePermission('read'),
   validate(getWalletInfoSchema, 'params'),
   asyncHandler(async (req: Request, res: Response) => {
+    // OWASP: Injection - Use strictly validated path parameters
     const { address } = req.params;
     
     const balance = await blockchainService.balanceOf(address!);
@@ -162,9 +169,12 @@ router.post(
   strictRateLimiter,
   validate(deactivateWalletSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { wallet, reason } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof deactivateWalletSchema>;
+    const { wallet, reason } = body;
     
-    const correlationId = `deactivate-wallet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
+    const correlationId = generateCorrelationId('deactivate-wallet');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.deactivateWallet(wallet, correlationId, userId);
@@ -202,9 +212,11 @@ router.post(
   requirePermission('register_wallet'),
   strictRateLimiter,
   asyncHandler(async (req: Request, res: Response) => {
+    // OWASP: Injection - Use strictly validated path parameters
     const { address } = req.params;
     
-    const correlationId = `reactivate-wallet-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
+    const correlationId = generateCorrelationId('reactivate-wallet');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.reactivateWallet(address!, correlationId, userId);
@@ -242,9 +254,12 @@ router.put(
   idempotency,
   validate(updateLinkedBankSchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { wallet, newBankAccount } = req.body;
+    // OWASP: Insecure Deserialization - Never trust JSON structure or types
+    const body = req.body as z.infer<typeof updateLinkedBankSchema>;
+    const { wallet, newBankAccount } = body;
     
-    const correlationId = `update-linked-bank-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
+    const correlationId = generateCorrelationId('update-linked-bank');
     const userId = req.auth!.institutionId;
     
     const result = await blockchainService.updateLinkedBank(wallet, newBankAccount, correlationId, userId);
