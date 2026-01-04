@@ -1,136 +1,75 @@
-# Tokenized Euro (tEUR)
+# Tokenized Euro (tEUR) Project
 
-Sovereign EU financial infrastructure for the Tokenized Euro.
+## 1. Project Overview
 
-## Overview
+This repository contains a technical reference implementation for exploring the operational, governance, and resilience aspects of a tokenized euro system. The implementation is designed as a research tool to examine distributed ledger technology in the context of financial settlement systems.
 
-tEUR is a digital euro settlement system designed for:
+## 2. What This Project Is
 
-- Sovereign EU deployment
-- Multi-zone resilience
-- Regulatory compliance
-- Vendor independence
+This project provides:
 
-## Documentation Translations
+- A simulated distributed ledger environment for studying settlement mechanics
+- Reference implementations of smart contracts for token management
+- Infrastructure components for multi-zone deployment scenarios
+- Documentation of governance and compliance frameworks
+- Test environments for resilience and security analysis
 
-Select a language (flag indicates a representative country):
+## 3. What This Project Is Not
 
-- 🇧🇬 Bulgarian: [README (BG)](docs/readmes/README.bg.md)
-- 🇭🇷 Croatian: [README (HR)](docs/readmes/README.hr.md)
-- 🇨🇿 Czech: [README (CS)](docs/readmes/README.cs.md)
-- 🇩🇰 Danish: [README (DA)](docs/readmes/README.da.md)
-- 🇳🇱 Dutch: [README (NL)](docs/readmes/README.nl.md)
-- 🇪🇺 English: [README (EN)](docs/readmes/README.en.md)
-- 🇪🇪 Estonian: [README (ET)](docs/readmes/README.et.md)
-- 🇫🇮 Finnish: [README (FI)](docs/readmes/README.fi.md)
-- 🇫🇷 French: [README (FR)](docs/readmes/README.fr.md)
-- 🇩🇪 German: [README (DE)](docs/readmes/README.de.md)
-- 🇬🇷 Greek: [README (EL)](docs/readmes/README.el.md)
-- 🇭🇺 Hungarian: [README (HU)](docs/readmes/README.hu.md)
-- 🇮🇪 Irish: [README (GA)](docs/readmes/README.ga.md)
-- 🇮🇹 Italian: [README (IT)](docs/readmes/README.it.md)
-- 🇱🇻 Latvian: [README (LV)](docs/readmes/README.lv.md)
-- 🇱🇹 Lithuanian: [README (LT)](docs/readmes/README.lt.md)
-- 🇲🇹 Maltese: [README (MT)](docs/readmes/README.mt.md)
-- 🇵🇱 Polish: [README (PL)](docs/readmes/README.pl.md)
-- 🇵🇹 Portuguese: [README (PT)](docs/readmes/README.pt.md)
-- 🇷🇴 Romanian: [README (RO)](docs/readmes/README.ro.md)
-- 🇸🇰 Slovak: [README (SK)](docs/readmes/README.sk.md)
-- 🇸🇮 Slovenian: [README (SL)](docs/readmes/README.sl.md)
-- 🇪🇸 Spanish: [README (ES)](docs/readmes/README.es.md)
-- 🇸🇪 Swedish: [README (SV)](docs/readmes/README.sv.md)
+This project does not:
 
-## Token Specification
+- Constitute a currency or payment system
+- Provide production-ready financial infrastructure
+- Represent endorsement by any regulatory authority
+- Include live monetary value or real settlement capabilities
+- Serve as a basis for commercial deployment
 
-| Property | Value            |
-| -------- | ---------------- |
-| Name     | Tokenized Euro   |
-| Symbol   | `tEUR`           |
-| Decimals | 2                |
-| Backing  | 1:1 EUR reserves |
+## 4. Governance and Authority Model
 
-## Architecture
+The implementation simulates a hierarchical governance structure with the following roles:
 
-### Trust Zones
+- Central authority simulation for settlement coordination
+- National node simulations for regional operations
+- Participant simulations for commercial entities
+- Governance mechanisms for policy enforcement
 
-| Zone Type             | Prefix           | Description                    |
-| --------------------- | ---------------- | ------------------------------ |
-| ECB Core              | `ecb-core`       | Central settlement authority   |
-| National Central Bank | `ncb-<country>`  | National node (e.g., `ncb-de`) |
-| Commercial Bank       | `bank-<country>` | Commercial participant         |
-| PSP                   | `psp-<region>`   | Payment service provider       |
+All roles are simulated for research purposes only and do not confer actual authority.
 
-### DNS Realms
+## 5. Risk and Compliance Alignment
 
-- **CSP (Closed Settlement Plane)**: `<service>.<zone>.csp.eu.int`
-- **PAP (Public Access Plane)**: `<service>.teuro.eu`
+The project incorporates:
 
-## Project Structure
+- Multi-zone isolation for operational resilience
+- Cryptographic controls for data integrity
+- Audit logging for transaction traceability
+- Compliance frameworks for regulatory alignment
+- Risk mitigation strategies for system stability
 
-```
-├── docs/                    # Documentation
-├── modules/                 # Terraform modules
-│   ├── dns-authoritative/   # Authoritative DNS
-│   ├── dns-resolver/        # Recursive resolver
-│   ├── ledger-node/         # Besu validator node
-│   ├── routing-gateway/     # Inter-zone routing
-│   ├── pki-root/            # Root CA
-│   └── pki-intermediate/    # Intermediate CA
-├── envs/                    # Environment configurations
-│   ├── lab/                 # Local development
-│   ├── int/                 # Integration
-│   ├── stg/                 # Staging
-│   └── prd/                 # Production
-├── k8s/                     # Kubernetes manifests
-│   └── base/                # Base configurations
-├── contracts/               # Smart contracts
-└── scripts/                 # Utility scripts
-```
+## 6. Security and Safety Posture
 
-## Environments
+Security measures include:
 
-| Environment | Name  | Purpose                          |
-| ----------- | ----- | -------------------------------- |
-| Local Lab   | `lab` | Single or multi-node development |
-| Integration | `int` | Controlled shared testing        |
-| Staging     | `stg` | Pre-production validation        |
-| Production  | `prd` | Sovereign production             |
+- Cryptographic key management
+- Network segmentation
+- Access control mechanisms
+- Secure communication protocols
+- Incident response procedures
 
-## Getting Started
+All security implementations are for research and testing purposes.
 
-### Prerequisites
+## 7. Intended Audience
 
-- Terraform >= 1.5
-- Kubernetes >= 1.28
-- Helm >= 3.12
+This project is intended for:
 
-### Local Development
+- Researchers studying distributed ledger technology
+- Regulatory authorities examining financial system design
+- Academic institutions exploring digital asset frameworks
+- Technical professionals analyzing system resilience
 
-```bash
-cd envs/lab/ecb-core
-terraform init
-terraform plan
-terraform apply
-```
+## 8. Licensing and Attribution
 
-## Naming Conventions
+This project is licensed under the MIT License. See LICENSE file for details.
 
-All names must be:
+## 9. Disclaimer
 
-- Lowercase
-- Hyphen-separated
-- ASCII only
-- Function-based (not implementation-based)
-
-See [Canonical Naming Conventions](docs/canonical-naming-and-copilot-instructions.md) for complete rules.
-
-## Security
-
-- All internal communication uses mTLS
-- Keys never appear in plaintext
-- Secrets are mounted, not embedded
-- Full auditability required
-
-## License
-
-Proprietary - EU Sovereign Infrastructure
+This implementation is for research and educational purposes only. It does not represent a functional financial system and should not be used for any commercial or operational purposes. The maintainers make no warranties regarding the suitability, reliability, or security of this code for any purpose. Users assume all responsibility for their use of this material.
