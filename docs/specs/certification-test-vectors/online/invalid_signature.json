@@ -1,0 +1,37 @@
+{
+  "description": "Rejection of invalid JWS signature",
+  "request": {
+    "method": "POST",
+    "url": "/v1/transactions/authorize",
+    "headers": {
+      "Idempotency-Key": "test-invalid-sig-001",
+      "X-Request-Id": "550e8400-e29b-41d4-a716-446655440006",
+      "X-Acquirer-Id": "acq_123",
+      "X-Merchant-Id": "m_123",
+      "X-Terminal-Id": "t_456",
+      "X-JWS-Signature": "invalid_signature_here"
+    },
+    "body": {
+      "amount": { "value": "12.34", "currency": "EUR" },
+      "merchant": { "merchant_id": "m_123", "category_code": "5411" },
+      "terminal": { "terminal_id": "t_456", "capabilities": ["NFC", "CHIP", "OFFLINE"] },
+      "payer": { "instrument_type": "TEUR_WALLET", "wallet_token": "valid_token_123" },
+      "risk": { "device_attestation": "attest_123", "offline_eligible": true },
+      "metadata": { "local_txn_time_utc": "2026-01-03T13:40:12Z" }
+    }
+  },
+  "expected_response": {
+    "status": 401,
+    "body": {
+      "error": {
+        "code": "INVALID_SIGNATURE",
+        "message": "Signature verification failed",
+        "retryable": false,
+        "correlation_id": "550e8400-e29b-41d4-a716-446655440006",
+        "scheme_code": "30"
+      }
+    }
+  },
+  "expected_scheme_code": "30",
+  "expected_audit_events": []
+}

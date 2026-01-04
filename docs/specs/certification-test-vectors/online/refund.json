@@ -1,0 +1,47 @@
+{
+  "description": "Successful refund of a captured transaction",
+  "request": {
+    "method": "POST",
+    "url": "/v1/transactions/refund",
+    "headers": {
+      "Idempotency-Key": "test-refund-001",
+      "X-Request-Id": "550e8400-e29b-41d4-a716-446655440012",
+      "X-Acquirer-Id": "acq_123",
+      "X-Merchant-Id": "m_123",
+      "X-Terminal-Id": "t_456",
+      "X-JWS-Signature": "eyJhbGciOiJFUzI1NiJ9..."
+    },
+    "body": {
+      "original_transaction_id": "txn_capture_001",
+      "amount": { "value": "10.00", "currency": "EUR" },
+      "reason": "CUSTOMER_RETURN",
+      "metadata": { "local_txn_time_utc": "2025-01-03T14:00:00Z" }
+    }
+  },
+  "expected_response": {
+    "status": 200,
+    "body": {
+      "transaction_id": "txn_refund_001",
+      "status": "REFUNDED",
+      "amount": { "value": "10.00", "currency": "EUR" },
+      "correlation_id": "550e8400-e29b-41d4-a716-446655440012",
+      "scheme_code": "00",
+      "processed_at": "2025-01-03T14:00:00.123Z",
+      "finality": "FINAL"
+    }
+  },
+  "expected_scheme_code": "00",
+  "expected_audit_events": [
+    {
+      "event_type": "TRANSACTION_REFUNDED",
+      "transaction_id": "txn_refund_001",
+      "original_transaction_id": "txn_capture_001",
+      "amount": "10.00",
+      "currency": "EUR",
+      "reason": "CUSTOMER_RETURN",
+      "acquirer_id": "acq_123",
+      "merchant_id": "m_123",
+      "terminal_id": "t_456"
+    }
+  ]
+}

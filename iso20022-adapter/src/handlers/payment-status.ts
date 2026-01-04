@@ -2,6 +2,7 @@ import { XMLParser } from 'fast-xml-parser';
 import axios from 'axios';
 import { config } from '../config';
 import { logger } from '../logger';
+import { generatePaymentStatusReport } from './payment-status-report';
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 

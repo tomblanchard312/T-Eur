@@ -64,7 +64,6 @@ jobs:
 
           print("Copilot instructions integrity checks passed.")
           PY
-
       - name: Require security review when instructions change
         if: github.event_name == 'pull_request'
         run: |

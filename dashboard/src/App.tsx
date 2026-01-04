@@ -1,29 +1,28 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import Wallets from './pages/Wallets';
-import Transfers from './pages/Transfers';
-import Payments from './pages/Payments';
-import System from './pages/System';
-import Roles from './pages/Roles';
-import ConsumerWallet from './pages/ConsumerWallet';
+import { MainLayout } from './layouts/MainLayout';
+import { Dashboard } from './pages/Dashboard';
+import { MonetaryOps } from './pages/MonetaryOps';
+import { Sanctions } from './pages/Sanctions';
+import { Escrow } from './pages/Escrow';
+import { Security } from './pages/Security';
+import { Audit } from './pages/Audit';
+import './i18n';
 
 function App() {
   return (
     <BrowserRouter>
-      <Layout>
+      <MainLayout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/wallets" element={<Wallets />} />
-          <Route path="/transfers" element={<Transfers />} />
-          <Route path="/payments" element={<Payments />} />
-          <Route path="/system" element={<System />} />
-          <Route path="/roles" element={<Roles />} />
-          <Route path="/consumer-wallet" element={<ConsumerWallet />} />
+          <Route path="/monetary" element={<MonetaryOps />} />
+          <Route path="/sanctions" element={<Sanctions />} />
+          <Route path="/escrow" element={<Escrow />} />
+          <Route path="/security" element={<Security />} />
+          <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </Layout>
+      </MainLayout>
       <Toaster position="top-right" richColors />
     </BrowserRouter>
   );

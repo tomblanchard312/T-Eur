@@ -22,6 +22,14 @@ contract Permissioning {
     bytes32 public constant ORACLE_ROLE = keccak256("ORACLE_ROLE");         // Can confirm conditions
     bytes32 public constant WATERFALL_ROLE = keccak256("WATERFALL_ROLE");   // Can execute waterfall sweeps
 
+    // Sovereign monetary control roles
+    bytes32 public constant ECB_ROLE = keccak256("ECB_ROLE");
+    bytes32 public constant STATE_BANK_ROLE = keccak256("STATE_BANK_ROLE");
+    bytes32 public constant LOCAL_BANK_ROLE = keccak256("LOCAL_BANK_ROLE");
+    bytes32 public constant PSP_ROLE = keccak256("PSP_ROLE");
+    bytes32 public constant MERCHANT_ROLE = keccak256("MERCHANT_ROLE");
+    bytes32 public constant WALLET_HOLDER_ROLE = keccak256("WALLET_HOLDER_ROLE");
+
     // Role mappings
     mapping(bytes32 => mapping(address => bool)) private _roles;
 
@@ -99,5 +107,29 @@ contract Permissioning {
 
     function isWaterfallOperator(address account) external view returns (bool) {
         return _roles[WATERFALL_ROLE][account];
+    }
+
+    function isECB(address account) external view returns (bool) {
+        return _roles[ECB_ROLE][account];
+    }
+
+    function isStateBank(address account) external view returns (bool) {
+        return _roles[STATE_BANK_ROLE][account];
+    }
+
+    function isLocalBank(address account) external view returns (bool) {
+        return _roles[LOCAL_BANK_ROLE][account];
+    }
+
+    function isPSP(address account) external view returns (bool) {
+        return _roles[PSP_ROLE][account];
+    }
+
+    function isMerchant(address account) external view returns (bool) {
+        return _roles[MERCHANT_ROLE][account];
+    }
+
+    function isWalletHolder(address account) external view returns (bool) {
+        return _roles[WALLET_HOLDER_ROLE][account];
     }
 }

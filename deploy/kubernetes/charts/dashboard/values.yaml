@@ -1,0 +1,25 @@
+image:
+  repository: teur/dashboard
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+env:
+  TEUR_ENV: ""
+  TEUR_ROLE: ""
+
+service:
+  type: LoadBalancer
+  port: 80
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+networkPolicy:
+  enabled: true

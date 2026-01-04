@@ -39,6 +39,18 @@ contract TokenizedEuro is ITokenizedEuro {
     // Wallet registry for holding limits
     IWalletRegistry public walletRegistry;
 
+    // Sovereign monetary controls
+    mapping(address => bool) public frozenAccounts;
+
+    struct EscrowRecord {
+        uint256 amount;
+        string legalBasis;
+        uint256 expiry;
+    }
+
+    mapping(address => EscrowRecord) public escrowedBalances;
+    mapping(address => uint256) public escrowTotals;
+
     // Emergency controls
     bool public paused;
     
@@ -57,6 +69,13 @@ contract TokenizedEuro is ITokenizedEuro {
     event WalletRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
     event WaterfallToggled(bool enabled);
 
+    // Sovereign monetary control events
+    event AccountFrozen(address indexed account, address indexed by, string reason);
+    event AccountUnfrozen(address indexed account, address indexed by);
+    event FundsEscrowed(address indexed account, uint256 amount, string legalBasis, uint256 expiry);
+    event FundsReleased(address indexed account, uint256 amount, address indexed to);
+    event FundsBurnedFromEscrow(address indexed account, uint256 amount);
+
     // Errors
     error Unauthorized();
     error ContractPaused();
@@ -69,6 +88,10 @@ contract TokenizedEuro is ITokenizedEuro {
     error HoldingLimitExceeded();
     error NoLinkedBankAccount();
     error WaterfallDisabled();
+    error AccountIsFrozen();
+    error InsufficientEscrowBalance();
+    error EscrowExpired();
+    error InvalidAmount();
 
     // Idempotency tracking
     mapping(bytes32 => bool) private _usedIdempotencyKeys;
@@ -85,6 +108,11 @@ contract TokenizedEuro is ITokenizedEuro {
 
     modifier onlyEmergencyController() {
         if (!permissioning.isEmergencyController(msg.sender)) revert Unauthorized();
+        _;
+    }
+
+    modifier onlyECB() {
+        if (!permissioning.isECB(msg.sender)) revert Unauthorized();
         _;
     }
 
@@ -181,8 +209,9 @@ contract TokenizedEuro is ITokenizedEuro {
         address to,
         uint256 amount,
         bytes32 idempotencyKey
-    ) external onlyMinter whenNotPaused idempotent(idempotencyKey) {
+    ) external onlyECB whenNotPaused idempotent(idempotencyKey) {
         if (to == address(0)) revert ZeroAddress();
+        if (amount == 0) revert InvalidAmount();
         
         _totalSupply += amount;
         _balances[to] += amount;
@@ -201,7 +230,7 @@ contract TokenizedEuro is ITokenizedEuro {
         address from,
         uint256 amount,
         bytes32 idempotencyKey
-    ) external onlyBurner whenNotPaused idempotent(idempotencyKey) {
+    ) external onlyECB whenNotPaused idempotent(idempotencyKey) {
         if (_balances[from] < amount) revert InsufficientBalance();
         
         _balances[from] -= amount;
@@ -221,6 +250,84 @@ contract TokenizedEuro is ITokenizedEuro {
     function unpause() external onlyEmergencyController {
         paused = false;
         emit Unpaused(msg.sender);
+    }
+
+    // ============ Sovereign Monetary Controls ============
+
+    /**
+     * @notice Freeze an account (sanctions)
+     * @param account Address to freeze
+     * @param reason Reason for freezing
+     */
+    function freezeAccount(address account, string calldata reason) external onlyECB {
+        if (account == address(0)) revert ZeroAddress();
+        frozenAccounts[account] = true;
+        emit AccountFrozen(account, msg.sender, reason);
+    }
+
+    /**
+     * @notice Unfreeze an account
+     * @param account Address to unfreeze
+     */
+    function unfreezeAccount(address account) external onlyECB {
+        if (account == address(0)) revert ZeroAddress();
+        frozenAccounts[account] = false;
+        emit AccountUnfrozen(account, msg.sender);
+    }
+
+    /**
+     * @notice Escrow funds from an account
+     * @param account Address to escrow from
+     * @param amount Amount to escrow
+     * @param legalBasis Legal basis for escrow
+     * @param expiry Expiry timestamp (0 for no expiry)
+     */
+    function escrowFunds(address account, uint256 amount, string calldata legalBasis, uint256 expiry) external onlyECB {
+        if (account == address(0)) revert ZeroAddress();
+        if (amount == 0) revert InvalidAmount();
+        if (_balances[account] < amount) revert InsufficientBalance();
+
+        _balances[account] -= amount;
+        escrowedBalances[account] = EscrowRecord(amount, legalBasis, expiry);
+        escrowTotals[account] += amount;
+
+        emit FundsEscrowed(account, amount, legalBasis, expiry);
+    }
+
+    /**
+     * @notice Release escrowed funds to an account
+     * @param account Address to release from escrow
+     * @param to Address to send funds to
+     */
+    function releaseEscrowedFunds(address account, address to) external onlyECB {
+        if (account == address(0) || to == address(0)) revert ZeroAddress();
+        EscrowRecord memory record = escrowedBalances[account];
+        if (record.amount == 0) revert InsufficientEscrowBalance();
+        if (record.expiry > 0 && block.timestamp > record.expiry) revert EscrowExpired();
+
+        uint256 amount = record.amount;
+        _balances[to] += amount;
+        escrowTotals[account] -= amount;
+        delete escrowedBalances[account];
+
+        emit FundsReleased(account, amount, to);
+    }
+
+    /**
+     * @notice Burn funds from escrow
+     * @param account Address to burn escrow from
+     */
+    function burnEscrowedFunds(address account) external onlyECB {
+        if (account == address(0)) revert ZeroAddress();
+        EscrowRecord memory record = escrowedBalances[account];
+        if (record.amount == 0) revert InsufficientEscrowBalance();
+
+        uint256 amount = record.amount;
+        _totalSupply -= amount;
+        escrowTotals[account] -= amount;
+        delete escrowedBalances[account];
+
+        emit FundsBurnedFromEscrow(account, amount);
     }
 
     // ============ Waterfall Functions ============
@@ -286,6 +393,8 @@ contract TokenizedEuro is ITokenizedEuro {
     function _transfer(address from, address to, uint256 amount) internal {
         if (from == address(0)) revert ZeroAddress();
         if (to == address(0)) revert ZeroAddress();
+        if (frozenAccounts[from]) revert AccountIsFrozen();
+        if (frozenAccounts[to]) revert AccountIsFrozen();
         if (_balances[from] < amount) revert InsufficientBalance();
 
         unchecked {

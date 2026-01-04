@@ -1,0 +1,49 @@
+{
+  "description": "Rejection due to offline transaction limit exceeded",
+  "request": {
+    "method": "POST",
+    "url": "/v1/transactions/advice",
+    "headers": {
+      "Idempotency-Key": "test-limit-exceed-001",
+      "X-Request-Id": "550e8400-e29b-41d4-a716-446655440015",
+      "X-Acquirer-Id": "acq_123",
+      "X-Merchant-Id": "m_123",
+      "X-Terminal-Id": "t_456",
+      "X-JWS-Signature": "eyJhbGciOiJFUzI1NiJ9..."
+    },
+    "body": {
+      "offline_transaction_id": "offline_txn_002",
+      "amount": { "value": "150.00", "currency": "EUR" },
+      "merchant": { "merchant_id": "m_123", "category_code": "5411" },
+      "terminal": { "terminal_id": "t_456", "capabilities": ["NFC", "CHIP", "OFFLINE"] },
+      "payer": { "instrument_type": "TEUR_WALLET", "wallet_token": "valid_token_123" },
+      "risk": { "device_attestation": "attest_123", "offline_eligible": true },
+      "metadata": { "local_txn_time_utc": "2025-01-03T12:35:00Z" }
+    }
+  },
+  "expected_response": {
+    "status": 400,
+    "body": {
+      "error": {
+        "code": "OFFLINE_LIMIT_EXCEEDED",
+        "message": "Transaction amount exceeds offline limit",
+        "retryable": false,
+        "correlation_id": "550e8400-e29b-41d4-a716-446655440015",
+        "scheme_code": "61"
+      }
+    }
+  },
+  "expected_scheme_code": "61",
+  "expected_audit_events": [
+    {
+      "event_type": "OFFLINE_LIMIT_EXCEEDED",
+      "offline_transaction_id": "offline_txn_002",
+      "amount": "150.00",
+      "currency": "EUR",
+      "limit": "100.00",
+      "acquirer_id": "acq_123",
+      "merchant_id": "m_123",
+      "terminal_id": "t_456"
+    }
+  ]
+}

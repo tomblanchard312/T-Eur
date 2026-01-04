@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: { { include "teur-contracts.fullname" . } }
+  labels:
+    app.kubernetes.io/name: { { include "teur-contracts.name" . } }
+    app.kubernetes.io/instance: { { .Release.Name } }
+    app.kubernetes.io/version: { { .Chart.AppVersion | quote } }
+    app.kubernetes.io/managed-by: { { .Release.Service } }
+spec:
+  type: { { .Values.service.type } }
+  ports:
+    - port: { { .Values.service.port } }
+      targetPort: rpc
+      protocol: TCP
+      name: rpc
+  selector:
+    app.kubernetes.io/name: { { include "teur-contracts.name" . } }
+    app.kubernetes.io/instance: { { .Release.Name } }

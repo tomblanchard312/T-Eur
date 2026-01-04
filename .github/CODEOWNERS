@@ -1,0 +1,28 @@
+# ---------------------------------------------------------
+# Security and Compliance Ownership
+# ---------------------------------------------------------
+
+# Copilot and AI governance controls
+.github/copilot-instructions.md          @security-team @compliance-team
+.github/workflows/copilot-instructions-integrity.yml  @security-team @compliance-team
+
+# CI pipelines enforcing security, resilience, and auditability
+.github/workflows/dependency-hygiene.yml @security-team
+.github/workflows/supply-chain-and-compliance.yml @security-team
+.github/workflows/corruption-visibility.yml @security-team
+
+# Compliance and regulatory documentation
+docs/compliance/**                       @compliance-team @security-team
+
+# Cryptography, settlement, and integrity-sensitive code
+src/crypto/**                            @security-team
+src/settlement/**                        @security-team
+src/reference-data/**                    @security-team
+
+# Infrastructure and network controls
+infra/**                                 @platform-team @security-team
+
+# Global override for high-risk configuration
+package.json                             @security-team
+package-lock.json                        @security-team
+tsconfig.json                           @security-team

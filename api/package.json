@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "REST API Gateway for Digital Euro (tEUR) Bank Integration",
   "main": "dist/index.js",
-
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
@@ -12,7 +11,6 @@
     "test": "vitest",
     "test:coverage": "vitest --coverage"
   },
-
   "dependencies": {
     "compression": "^1.7.4",
     "cors": "^2.8.5",
@@ -22,6 +20,7 @@
     "express-async-errors": "^3.1.1",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
+    "iso8583": "^0.0.1",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "swagger-ui-express": "^5.0.0",
@@ -30,7 +29,6 @@
     "yamljs": "^0.3.0",
     "zod": "^3.22.4"
   },
-
   "devDependencies": {
     "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
@@ -51,14 +49,12 @@
     "typescript": "^5.3.3",
     "vitest": "^4.0.16"
   },
-
   "overrides": {
     "inflight": "npm:noop-package@1.0.0",
     "glob": "^9.3.5",
     "rimraf": "^5.0.5",
     "superagent": "^10.2.2"
   },
-
   "engines": {
     "node": ">=20.0.0"
   }

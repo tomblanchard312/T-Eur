@@ -1,0 +1,37 @@
+{
+  "description": "Idempotency conflict with different request body",
+  "request": {
+    "method": "POST",
+    "url": "/v1/transactions/authorize",
+    "headers": {
+      "Idempotency-Key": "test-conflict-001",
+      "X-Request-Id": "550e8400-e29b-41d4-a716-446655440009",
+      "X-Acquirer-Id": "acq_123",
+      "X-Merchant-Id": "m_123",
+      "X-Terminal-Id": "t_456",
+      "X-JWS-Signature": "eyJhbGciOiJFUzI1NiJ9..."
+    },
+    "body": {
+      "amount": { "value": "99.99", "currency": "EUR" },
+      "merchant": { "merchant_id": "m_123", "category_code": "5411" },
+      "terminal": { "terminal_id": "t_456", "capabilities": ["NFC", "CHIP", "OFFLINE"] },
+      "payer": { "instrument_type": "TEUR_WALLET", "wallet_token": "valid_token_123" },
+      "risk": { "device_attestation": "attest_123", "offline_eligible": true },
+      "metadata": { "local_txn_time_utc": "2026-01-03T13:40:12Z" }
+    }
+  },
+  "expected_response": {
+    "status": 409,
+    "body": {
+      "error": {
+        "code": "IDEMPOTENCY_CONFLICT",
+        "message": "Idempotency key used with different parameters",
+        "retryable": false,
+        "correlation_id": "550e8400-e29b-41d4-a716-446655440009",
+        "scheme_code": "12"
+      }
+    }
+  },
+  "expected_scheme_code": "12",
+  "expected_audit_events": []
+}

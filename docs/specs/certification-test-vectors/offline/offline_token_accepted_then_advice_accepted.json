@@ -1,0 +1,51 @@
+{
+  "description": "Offline token accepted then advice accepted",
+  "request": {
+    "method": "POST",
+    "url": "/v1/offline/advice",
+    "headers": {
+      "Idempotency-Key": "test-offline-advice-001",
+      "X-Request-Id": "550e8400-e29b-41d4-a716-446655440004",
+      "X-Acquirer-Id": "acq_123",
+      "X-JWS-Signature": "eyJhbGciOiJFUzI1NiJ9..."
+    },
+    "body": {
+      "batch_id": "batch_001",
+      "submitted_at_utc": "2026-01-03T14:00:00Z",
+      "items": [
+        {
+          "merchant_id": "m_123",
+          "terminal_id": "t_456",
+          "amount": { "value": "25.00", "currency": "EUR" },
+          "offline_token": "signed_offline_token_valid",
+          "local_time_utc": "2026-01-03T13:45:00Z",
+          "sequence": 1
+        }
+      ]
+    }
+  },
+  "expected_response": {
+    "status": 200,
+    "body": {
+      "batch_id": "batch_001",
+      "accepted": 1,
+      "rejected": 0,
+      "results": [
+        {
+          "index": 0,
+          "decision": "ACCEPTED",
+          "txn_id": "550e8400-e29b-41d4-a716-446655440005",
+          "reason_code": "OK"
+        }
+      ]
+    }
+  },
+  "expected_scheme_code": null,
+  "expected_audit_events": [
+    {
+      "event_type": "OFFLINE_ADVICE_SUBMIT",
+      "correlation_id": "550e8400-e29b-41d4-a716-446655440004",
+      "actor": "acq_123"
+    }
+  ]
+}

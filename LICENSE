@@ -1,0 +1,26 @@
+# tEUR Sovereign Software License
+
+Copyright (c) 2024-2026 Tom Blanchard. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person or entity obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, modify, merge, publish, distribute, and deploy the Software, subject to the following conditions:
+
+## 1. Attribution and Copyright Notices
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software, whether in source code form or as part of the documentation accompanying any distribution or deployment. Removal or modification of any copyright, trademark, or attribution notices within the Software is strictly prohibited.
+
+## 2. No Relicensing
+This Software may be incorporated into other works, but the attribution requirements and disclaimers set forth in this License must be preserved and may not be superseded by any other licensing terms.
+
+## 3. No Endorsement
+Neither the name of the author nor the names of any contributors may be used to endorse or promote products, services, or monetary schemes derived from this Software without specific prior written permission. Use of this Software does not imply, and shall not be represented as, an endorsement by the author of any specific implementation, deployment, or monetary policy.
+
+## 4. Sovereign Authority and Monetary Policy
+This Software is a technical tool. The author provides no mandate, authority, or governance over the monetary policies, settlement rules, or sovereign actions executed through the use of the Software. All monetary policy authority, regulatory compliance, and operational liability remain exclusively with the sovereign operators, central banks, or regulated financial institutions deploying the Software.
+
+## 5. Disclaimer of Warranty
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## 6. Limitation of Liability
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION; OR LOSS OF MONETARY VALUE OR STABILITY) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## 7. Governing Law
+This License and any disputes arising out of or in connection with it shall be governed by and construed in accordance with the laws of [INSERT JURISDICTION], without regard to its conflict of law principles.

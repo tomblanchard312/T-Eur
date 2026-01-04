@@ -1,0 +1,910 @@
+openapi: 3.1.0
+info:
+  title: tEUR Acquirer API
+  version: 1.1.0
+  description: >
+    Visa-style acquirer integration API for the tEUR network. This API is intended for acquirers/processors
+    to request authorization and submit clearing, reversals, refunds, reconciliation queries, and offline
+    advice batches. All mutating endpoints require idempotency and detached JWS over the canonical JSON body.
+
+    Settlement finality semantics:
+    - Authorization: Reserves funds but does not finalize settlement. Can be reversed or captured.
+    - Capture: Finalizes the transaction amount for settlement in the next batch. Cannot be reversed after batch cutoff.
+    - Batch: Settlement occurs at batch close, with finality achieved upon successful interbank clearing.
+  contact:
+    name: tEUR Infrastructure Team
+servers:
+  - url: https://api.t-eursystem.eu
+    description: Public Access Plane (non-settlement)
+  - url: https://teur-gateway.csp.internal
+    description: Closed Settlement Plane (private connectivity only)
+security:
+  - mTLS: []
+tags:
+  - name: Transactions
+  - name: Reconciliation
+  - name: Offline
+  - name: Disputes
+x-security:
+  mtls_required: true
+  detached_jws_required: true
+  notes:
+    - Use mutual TLS with client certificates issued by the tEUR closed-plane PKI.
+    - Use detached JWS over a canonical JSON representation of the request body.
+    - Do not include secrets or raw payloads in logs.
+x-conformance-profiles:
+  BASE_ONLINE:
+    required_endpoints: ["/v1/transactions/authorize", "/v1/transactions/{txn_id}/capture", "/v1/transactions/{txn_id}/reverse", "/v1/transactions/{txn_id}/refund"]
+    policy_flags: ["online_only"]
+  ONLINE_PLUS_OFFLINE:
+    required_endpoints: ["/v1/transactions/authorize", "/v1/transactions/{txn_id}/capture", "/v1/transactions/{txn_id}/reverse", "/v1/transactions/{txn_id}/refund", "/v1/offline/advice"]
+    policy_flags: ["offline_enabled"]
+  REFUND_ONLY:
+    required_endpoints: ["/v1/transactions/{txn_id}/refund"]
+    policy_flags: ["refund_only"]
+  OFFLINE_ADVICE_ONLY:
+    required_endpoints: ["/v1/offline/advice"]
+    policy_flags: ["advice_only"]
+x-time-policy:
+  max_clock_skew_seconds: 300
+  behavior_on_violation: "reject_with_CLOCK_SKEW_EXCEEDED"
+x-idempotency:
+  minimum_retention_seconds: 86400
+  recommended_retention_seconds: 2592000
+  conflict_behavior: "return_previous_response_if_identical"
+x-offline-policy:
+  per_wallet_daily_limit: "1000.00"
+  per_merchant_daily_limit: "50000.00"
+  per_terminal_daily_limit: "10000.00"
+  reconciliation_window_hours: 24
+x-crypto-agility:
+  supported_algorithms: ["ES256", "ES384", "ES512", "PS256", "PS384", "PS512"]
+  key_rotation_expectation: "quarterly"
+  versioning_approach: "algorithm_header_in_jws"
+x-audit-events:
+  authorize: ["TRANSACTION_AUTHORIZE"]
+  capture: ["TRANSACTION_CAPTURE"]
+  reverse: ["TRANSACTION_REVERSE"]
+  refund: ["TRANSACTION_REFUND"]
+  offline_advice: ["OFFLINE_ADVICE_SUBMIT"]
+  dispute_notify: ["DISPUTE_NOTIFY"]
+  dispute_status: ["DISPUTE_STATUS_QUERY"]
+paths:
+  /v1/transactions/authorize:
+    post:
+      tags: [Transactions]
+      summary: Authorize a payment
+      description: >
+        Requests authorization for a transaction. Must be idempotent. Deterministic responses for the same
+        Idempotency-Key and request body.
+      operationId: authorizeTransaction
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XAcquirerId'
+        - $ref: '#/components/parameters/XMerchantId'
+        - $ref: '#/components/parameters/XTerminalId'
+        - $ref: '#/components/parameters/XJwsSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeRequest'
+            examples:
+              sample:
+                value:
+                  amount: { value: "12.34", currency: "EUR" }
+                  merchant: { merchant_id: "m_123", category_code: "5411" }
+                  terminal: { terminal_id: "t_456", capabilities: ["NFC","CHIP","OFFLINE"] }
+                  payer:
+                    instrument_type: "TEUR_WALLET"
+                    wallet_token: "opaque_token"
+                  risk:
+                    device_attestation: "opaque_attestation"
+                    offline_eligible: true
+                  metadata:
+                    local_txn_time_utc: "2026-01-03T13:40:12Z"
+      responses:
+        '200':
+          description: Authorization decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/transactions/{txn_id}/capture:
+    post:
+      tags: [Transactions]
+      summary: Capture a previously authorized transaction
+      description: >
+        Finalizes the transaction for settlement. Once captured, the transaction is included in the next settlement batch.
+        Capture finality is achieved at batch close; reversals are not possible after batch cutoff.
+      operationId: captureTransaction
+      parameters:
+        - $ref: '#/components/parameters/TxnId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XAcquirerId'
+        - $ref: '#/components/parameters/XMerchantId'
+        - $ref: '#/components/parameters/XTerminalId'
+        - $ref: '#/components/parameters/XJwsSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureRequest'
+      responses:
+        '200':
+          description: Capture result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TxnStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/transactions/{txn_id}/reverse:
+    post:
+      tags: [Transactions]
+      summary: Reverse (void) an authorization
+      description: >
+        Cancels an authorization prior to capture. Must be idempotent.
+      operationId: reverseTransaction
+      parameters:
+        - $ref: '#/components/parameters/TxnId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XAcquirerId'
+        - $ref: '#/components/parameters/XMerchantId'
+        - $ref: '#/components/parameters/XTerminalId'
+        - $ref: '#/components/parameters/XJwsSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReverseRequest'
+      responses:
+        '200':
+          description: Reversal result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TxnStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/transactions/{txn_id}/refund:
+    post:
+      tags: [Transactions]
+      summary: Refund a captured transaction
+      operationId: refundTransaction
+      parameters:
+        - $ref: '#/components/parameters/TxnId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XAcquirerId'
+        - $ref: '#/components/parameters/XMerchantId'
+        - $ref: '#/components/parameters/XTerminalId'
+        - $ref: '#/components/parameters/XJwsSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequest'
+      responses:
+        '200':
+          description: Refund result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TxnStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/reconciliation/batches/{batch_id}:
+    get:
+      tags: [Reconciliation]
+      summary: Get reconciliation details for a batch
+      description: >
+        Retrieves final settlement details for a completed batch. Batch finality is achieved upon successful clearing.
+      operationId: getReconciliationBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XAcquirerId'
+      responses:
+        '200':
+          description: Batch reconciliation response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationBatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/offline/advice:
+    post:
+      tags: [Offline]
+      summary: Submit offline advice batch for later clearing
+      description: >
+        Submits a batch of offline-approved transactions. The tEUR network will verify token signatures,
+        anti-replay counters, limits, and policy. Accepted items are posted for settlement; rejected items
+        include explicit reason codes. Must be idempotent per batch_id.
+      operationId: submitOfflineAdvice
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XAcquirerId'
+        - $ref: '#/components/parameters/XJwsSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfflineAdviceBatchRequest'
+      responses:
+        '200':
+          description: Offline advice batch processing results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfflineAdviceBatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/disputes/notify:
+    post:
+      tags: [Disputes]
+      summary: Notify a dispute
+      description: >
+        Initiates a dispute for a settled transaction. Disputes must be filed within 60 days of settlement.
+        State machine: PENDING -> UNDER_REVIEW -> RESOLVED (ACCEPTED or DENIED).
+      operationId: notifyDispute
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XAcquirerId'
+        - $ref: '#/components/parameters/XJwsSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisputeNotifyRequest'
+      responses:
+        '201':
+          description: Dispute created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/disputes/{dispute_id}/status:
+    get:
+      tags: [Disputes]
+      summary: Get dispute status
+      operationId: getDisputeStatus
+      parameters:
+        - $ref: '#/components/parameters/DisputeId'
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XAcquirerId'
+      responses:
+        '200':
+          description: Dispute status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisputeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    mTLS:
+      type: mutualTLS
+      description: Mutual TLS using closed-plane PKI issued client certificates.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Unique key used to guarantee idempotent processing of the request.
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Correlation identifier for end-to-end tracing.
+    XAcquirerId:
+      name: X-Acquirer-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 64
+      description: Acquirer or processor identifier assigned by tEUR governance.
+    XMerchantId:
+      name: X-Merchant-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+      description: Merchant identifier known to the acquirer.
+    XTerminalId:
+      name: X-Terminal-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+      description: Terminal identifier known to the acquirer.
+    XJwsSignature:
+      name: X-JWS-Signature
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 40
+        maxLength: 4096
+      description: Detached JWS signature over canonical JSON body.
+    TxnId:
+      name: txn_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Transaction identifier returned from authorization.
+    BatchId:
+      name: batch_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 128
+      description: Acquirer-defined settlement or reconciliation batch identifier.
+    DisputeId:
+      name: dispute_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Dispute identifier.
+  responses:
+    BadRequest:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication failed (mTLS or signature)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Not authorized by policy
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Idempotency conflict or invalid state transition
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limited or throttled
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Unexpected server error (explicitly logged with correlation)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    Money:
+      type: object
+      additionalProperties: false
+      required: [value, currency]
+      properties:
+        value:
+          type: string
+          pattern: '^[0-9]+(\\.[0-9]{2})$'
+          description: Decimal string with 2 fractional digits.
+        currency:
+          type: string
+          const: EUR
+    Merchant:
+      type: object
+      additionalProperties: false
+      required: [merchant_id, category_code]
+      properties:
+        merchant_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        category_code:
+          type: string
+          pattern: '^[0-9]{4}$'
+          description: Merchant category code.
+    Terminal:
+      type: object
+      additionalProperties: false
+      required: [terminal_id, capabilities]
+      properties:
+        terminal_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        capabilities:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            type: string
+            enum: [NFC, CHIP, MAGSTRIPE, OFFLINE]
+    Payer:
+      type: object
+      additionalProperties: false
+      required: [instrument_type, wallet_token]
+      properties:
+        instrument_type:
+          type: string
+          enum: [TEUR_WALLET]
+        wallet_token:
+          type: string
+          minLength: 8
+          maxLength: 4096
+          description: Opaque token identifying payer instrument; must not contain PII.
+    Risk:
+      type: object
+      additionalProperties: false
+      required: [offline_eligible]
+      properties:
+        device_attestation:
+          type: string
+          minLength: 0
+          maxLength: 8192
+          description: Opaque attestation blob from wallet or acquirer.
+        offline_eligible:
+          type: boolean
+          description: Whether the acquirer considers the transaction eligible for offline fallback.
+    Metadata:
+      type: object
+      additionalProperties: false
+      required: [local_txn_time_utc]
+      properties:
+        local_txn_time_utc:
+          type: string
+          format: date-time
+    AuthorizeRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, merchant, terminal, payer, risk, metadata]
+      properties:
+        amount:
+          $ref: '#/components/schemas/Money'
+        merchant:
+          $ref: '#/components/schemas/Merchant'
+        terminal:
+          $ref: '#/components/schemas/Terminal'
+        payer:
+          $ref: '#/components/schemas/Payer'
+        risk:
+          $ref: '#/components/schemas/Risk'
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+    AuthorizeResponse:
+      type: object
+      additionalProperties: false
+      required: [auth, ledger]
+      properties:
+        auth:
+          type: object
+          additionalProperties: false
+          required: [decision, auth_code, expires_at_utc]
+          properties:
+            decision:
+              type: string
+              enum: [APPROVED, DECLINED, PARTIAL_OFFLINE_APPROVED]
+            auth_code:
+              type: string
+              minLength: 2
+              maxLength: 16
+            expires_at_utc:
+              type: string
+              format: date-time
+            scheme_code:
+              type: string
+              minLength: 2
+              maxLength: 4
+              description: Scheme-level reason code for declines.
+        limits:
+          type: object
+          additionalProperties: false
+          properties:
+            offline_spend_remaining:
+              $ref: '#/components/schemas/Money'
+        ledger:
+          type: object
+          additionalProperties: false
+          required: [txn_id, status]
+          properties:
+            txn_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [AUTHORIZED, DECLINED]
+    CaptureRequest:
+      type: object
+      additionalProperties: false
+      required: [capture_amount, batch]
+      properties:
+        capture_amount:
+          $ref: '#/components/schemas/Money'
+        batch:
+          type: object
+          additionalProperties: false
+          required: [batch_id]
+          properties:
+            batch_id:
+              type: string
+              minLength: 3
+              maxLength: 128
+    ReverseRequest:
+      type: object
+      additionalProperties: false
+      required: [reason_code]
+      properties:
+        reason_code:
+          type: string
+          enum: [CUSTOMER_CANCELLED, DUPLICATE, MERCHANT_ERROR, TIMEOUT]
+    RefundRequest:
+      type: object
+      additionalProperties: false
+      required: [refund_amount, reason_code]
+      properties:
+        refund_amount:
+          $ref: '#/components/schemas/Money'
+        reason_code:
+          type: string
+          enum: [RETURNED_GOODS, SERVICE_NOT_PROVIDED, MERCHANT_DISCRETION, OTHER]
+    TxnStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [txn_id, status]
+      properties:
+        txn_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [CAPTURED, REVERSED, REFUNDED]
+        clearing_ref:
+          type: string
+          minLength: 0
+          maxLength: 128
+    ReconciliationBatchResponse:
+      type: object
+      additionalProperties: false
+      required: [batch_id, totals, items]
+      properties:
+        batch_id:
+          type: string
+        totals:
+          type: object
+          additionalProperties: false
+          required: [count, amount]
+          properties:
+            count:
+              type: integer
+              minimum: 0
+            amount:
+              $ref: '#/components/schemas/Money'
+        items:
+          type: array
+          maxItems: 5000
+          items:
+            type: object
+            additionalProperties: false
+            required: [txn_id, status]
+            properties:
+              txn_id:
+                type: string
+                format: uuid
+              status:
+                type: string
+                enum: [CAPTURED, REJECTED, PENDING]
+              reason:
+                type: string
+                maxLength: 256
+    OfflineAdviceItem:
+      type: object
+      additionalProperties: false
+      required: [merchant_id, terminal_id, amount, offline_token, local_time_utc, sequence]
+      properties:
+        merchant_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        terminal_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        amount:
+          $ref: '#/components/schemas/Money'
+        offline_token:
+          type: string
+          minLength: 20
+          maxLength: 16384
+          description: Signed offline spend token produced by wallet; opaque to acquirer.
+        local_time_utc:
+          type: string
+          format: date-time
+        sequence:
+          type: integer
+          minimum: 0
+          description: Terminal-side monotonic counter for audit ordering.
+    OfflineAdviceBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [batch_id, submitted_at_utc, items]
+      properties:
+        batch_id:
+          type: string
+          minLength: 3
+          maxLength: 128
+        submitted_at_utc:
+          type: string
+          format: date-time
+        items:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/OfflineAdviceItem'
+    OfflineAdviceResultItem:
+      type: object
+      additionalProperties: false
+      required: [index, decision]
+      properties:
+        index:
+          type: integer
+          minimum: 0
+        decision:
+          type: string
+          enum: [ACCEPTED, REJECTED, PENDING_REVIEW]
+        txn_id:
+          type: string
+          format: uuid
+        reason_code:
+          type: string
+          enum:
+            - OK
+            - INVALID_SIGNATURE
+            - REPLAY_DETECTED
+            - OFFLINE_LIMIT_EXCEEDED
+            - POLICY_BLOCKED
+            - EXPIRED
+            - UNKNOWN_WALLET_KEY
+            - MALFORMED_TOKEN
+    OfflineAdviceBatchResponse:
+      type: object
+      additionalProperties: false
+      required: [batch_id, accepted, rejected, results]
+      properties:
+        batch_id:
+          type: string
+        accepted:
+          type: integer
+          minimum: 0
+        rejected:
+          type: integer
+          minimum: 0
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfflineAdviceResultItem'
+    DisputeNotifyRequest:
+      type: object
+      additionalProperties: false
+      required: [txn_id, reason_code, evidence]
+      properties:
+        txn_id:
+          type: string
+          format: uuid
+        reason_code:
+          type: string
+          enum: [FRAUDULENT, DUPLICATE, GOODS_NOT_RECEIVED, GOODS_DEFECTIVE, OTHER]
+        evidence:
+          type: string
+          minLength: 10
+          maxLength: 10000
+          description: Evidence supporting the dispute.
+    DisputeResponse:
+      type: object
+      additionalProperties: false
+      required: [dispute_id, status, created_at_utc]
+      properties:
+        dispute_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, UNDER_REVIEW, RESOLVED_ACCEPTED, RESOLVED_DENIED]
+        created_at_utc:
+          type: string
+          format: date-time
+        resolved_at_utc:
+          type: string
+          format: date-time
+        resolution_reason:
+          type: string
+          maxLength: 512
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [event_type, timestamp_utc, correlation_id, actor]
+      properties:
+        event_type:
+          type: string
+          enum: [TRANSACTION_AUTHORIZE, TRANSACTION_CAPTURE, TRANSACTION_REVERSE, TRANSACTION_REFUND, OFFLINE_ADVICE_SUBMIT, DISPUTE_NOTIFY, DISPUTE_STATUS_QUERY]
+        timestamp_utc:
+          type: string
+          format: date-time
+        correlation_id:
+          type: string
+          format: uuid
+        actor:
+          type: string
+          minLength: 3
+          maxLength: 64
+        details:
+          type: object
+          additionalProperties: true
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, retryable, correlation_id]
+          properties:
+            code:
+              type: string
+              enum:
+                - INVALID_REQUEST
+                - INVALID_SIGNATURE
+                - UNAUTHORIZED_ACQUIRER
+                - POLICY_BLOCKED
+                - INSUFFICIENT_FUNDS
+                - SUSPECTED_FRAUD
+                - INVALID_STATE
+                - IDPOTENCY_CONFLICT
+                - NOT_FOUND
+                - RATE_LIMITED
+                - NETWORK_DEGRADED
+                - INTERNAL_ERROR
+                - CLOCK_SKEW_EXCEEDED
+            message:
+              type: string
+              maxLength: 512
+            retryable:
+              type: boolean
+            correlation_id:
+              type: string
+              format: uuid
+            scheme_code:
+              type: string
+              minLength: 2
+              maxLength: 4
+              description: Scheme-level reason code.

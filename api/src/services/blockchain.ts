@@ -20,8 +20,8 @@ const WalletRegistryABI = [
 ];
 
 const TokenizedEuroABI = [
-  'function mint(address to, uint256 amount) external',
-  'function burn(address from, uint256 amount) external',
+  'function mint(address to, uint256 amount, string justification, bytes32 idempotencyKey) external',
+  'function burn(address from, uint256 amount, bytes32 idempotencyKey) external',
   'function transfer(address to, uint256 amount) external returns (bool)',
   'function transferFrom(address from, address to, uint256 amount) external returns (bool)',
   'function approve(address spender, uint256 amount) external returns (bool)',
@@ -32,9 +32,22 @@ const TokenizedEuroABI = [
   'function pause() external',
   'function unpause() external',
   'function paused() external view returns (bool)',
+  'function freezeAccount(address account, string reason) external',
+  'function unfreezeAccount(address account) external',
+  'function escrowFunds(address account, uint256 amount, string legalBasis, uint256 expiry) external',
+  'function releaseEscrowedFunds(address account, address to) external',
+  'function burnEscrowedFunds(address account) external',
+  'function frozenAccounts(address account) external view returns (bool)',
+  'function escrowedBalances(address account) external view returns (tuple(uint256 amount, string legalBasis, uint256 expiry))',
+  'function escrowTotals(address account) external view returns (uint256)',
   'event Transfer(address indexed from, address indexed to, uint256 value)',
   'event WaterfallExecuted(address indexed wallet, uint256 excessAmount, address indexed linkedBank)',
   'event ReverseWaterfallExecuted(address indexed wallet, uint256 amount, address indexed linkedBank)',
+  'event AccountFrozen(address indexed account, address indexed by, string reason)',
+  'event AccountUnfrozen(address indexed account, address indexed by)',
+  'event FundsEscrowed(address indexed account, uint256 amount, string legalBasis, uint256 expiry)',
+  'event FundsReleased(address indexed account, uint256 amount, address indexed to)',
+  'event FundsBurnedFromEscrow(address indexed account, uint256 amount)',
 ];
 
 const ConditionalPaymentsABI = [
@@ -57,6 +70,12 @@ const PermissioningABI = [
   'function revokeRole(bytes32 role, address account) external',
   'function hasRole(bytes32 role, address account) external view returns (bool)',
   'function getRoleAdmin(bytes32 role) external view returns (bytes32)',
+  'function isECB(address account) external view returns (bool)',
+  'function isStateBank(address account) external view returns (bool)',
+  'function isLocalBank(address account) external view returns (bool)',
+  'function isPSP(address account) external view returns (bool)',
+  'function isMerchant(address account) external view returns (bool)',
+  'function isWalletHolder(address account) external view returns (bool)',
   'event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)',
   'event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)',
 ];
@@ -71,6 +90,12 @@ export const ROLES = {
   WATERFALL_OPERATOR_ROLE: ethers.keccak256(ethers.toUtf8Bytes('WATERFALL_OPERATOR_ROLE')),
   EMERGENCY_ROLE: ethers.keccak256(ethers.toUtf8Bytes('EMERGENCY_ROLE')),
   ARBITER_ROLE: ethers.keccak256(ethers.toUtf8Bytes('ARBITER_ROLE')),
+  ECB_ROLE: ethers.keccak256(ethers.toUtf8Bytes('ECB_ROLE')),
+  STATE_BANK_ROLE: ethers.keccak256(ethers.toUtf8Bytes('STATE_BANK_ROLE')),
+  LOCAL_BANK_ROLE: ethers.keccak256(ethers.toUtf8Bytes('LOCAL_BANK_ROLE')),
+  PSP_ROLE: ethers.keccak256(ethers.toUtf8Bytes('PSP_ROLE')),
+  MERCHANT_ROLE: ethers.keccak256(ethers.toUtf8Bytes('MERCHANT_ROLE')),
+  WALLET_HOLDER_ROLE: ethers.keccak256(ethers.toUtf8Bytes('WALLET_HOLDER_ROLE')),
 } as const;
 
 // Wallet type enum matching contract
@@ -532,14 +557,14 @@ class BlockchainService {
 
   // ============ Token Operations ============
 
-  async mint(to: string, amount: bigint, correlationId?: string, userId?: string) {
+  async mint(to: string, amount: bigint, justification: string, idempotencyKey: string, correlationId?: string, userId?: string) {
     // ECB Alignment: Holding limits enforcement at gateway
     await this.validateHoldingLimit(to, amount);
 
     return this.executeTransaction(
       this._tokenizedEuro,
       'mint',
-      [to, amount],
+      [to, amount, justification, idempotencyKey],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
@@ -548,11 +573,11 @@ class BlockchainService {
     );
   }
 
-  async burn(from: string, amount: bigint, correlationId?: string, userId?: string) {
+  async burn(from: string, amount: bigint, idempotencyKey: string, correlationId?: string, userId?: string) {
     return this.executeTransaction(
       this._tokenizedEuro,
       'burn',
-      [from, amount],
+      [from, amount, idempotencyKey],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
@@ -575,6 +600,135 @@ class BlockchainService {
         operation: 'TRANSFER_TOKENS'
       }
     );
+  }
+
+  // ============ Sovereign Monetary Controls ============
+
+  async freezeAccount(account: string, reason: string, correlationId?: string, userId?: string) {
+    return this.executeTransaction(
+      this._tokenizedEuro,
+      'freezeAccount',
+      [account, reason],
+      {
+        ...(correlationId && { correlationId }),
+        ...(userId && { userId }),
+        operation: 'FREEZE_ACCOUNT'
+      }
+    );
+  }
+
+  async unfreezeAccount(account: string, correlationId?: string, userId?: string) {
+    return this.executeTransaction(
+      this._tokenizedEuro,
+      'unfreezeAccount',
+      [account],
+      {
+        ...(correlationId && { correlationId }),
+        ...(userId && { userId }),
+        operation: 'UNFREEZE_ACCOUNT'
+      }
+    );
+  }
+
+  async escrowFunds(account: string, amount: bigint, legalBasis: string, expiry: bigint, correlationId?: string, userId?: string) {
+    return this.executeTransaction(
+      this._tokenizedEuro,
+      'escrowFunds',
+      [account, amount, legalBasis, expiry],
+      {
+        ...(correlationId && { correlationId }),
+        ...(userId && { userId }),
+        operation: 'ESCROW_FUNDS'
+      }
+    );
+  }
+
+  async releaseEscrowedFunds(account: string, to: string, correlationId?: string, userId?: string) {
+    return this.executeTransaction(
+      this._tokenizedEuro,
+      'releaseEscrowedFunds',
+      [account, to],
+      {
+        ...(correlationId && { correlationId }),
+        ...(userId && { userId }),
+        operation: 'RELEASE_ESCROWED_FUNDS'
+      }
+    );
+  }
+
+  async burnEscrowedFunds(account: string, correlationId?: string, userId?: string) {
+    return this.executeTransaction(
+      this._tokenizedEuro,
+      'burnEscrowedFunds',
+      [account],
+      {
+        ...(correlationId && { correlationId }),
+        ...(userId && { userId }),
+        operation: 'BURN_ESCROWED_FUNDS'
+      }
+    );
+  }
+
+  async isAccountFrozen(account: string): Promise<boolean> {
+    const func = this._tokenizedEuro.getFunction('frozenAccounts');
+    if (!func) throw new BlockchainError('Contract method frozenAccounts not available');
+    return await func(account) as boolean;
+  }
+
+  async getEscrowedBalance(account: string): Promise<{ amount: bigint; legalBasis: string; expiry: bigint }> {
+    const func = this._tokenizedEuro.getFunction('escrowedBalances');
+    if (!func) throw new BlockchainError('Contract method escrowedBalances not available');
+    const result = await func(account);
+    return {
+      amount: BigInt(result[0].toString()),
+      legalBasis: result[1],
+      expiry: BigInt(result[2].toString())
+    };
+  }
+
+  async getEscrowTotal(account: string): Promise<bigint> {
+    const func = this._tokenizedEuro.getFunction('escrowTotals');
+    if (!func) throw new BlockchainError('Contract method escrowTotals not available');
+    const result = await func(account);
+    return BigInt(result.toString());
+  }
+
+  // ============ Role Checks ============
+
+  async isECB(account: string): Promise<boolean> {
+    const func = this._permissioning.getFunction('isECB');
+    if (!func) throw new BlockchainError('Contract method isECB not available');
+    return await func(account) as boolean;
+  }
+
+  async isStateBank(account: string): Promise<boolean> {
+    const func = this._permissioning.getFunction('isStateBank');
+    if (!func) throw new BlockchainError('Contract method isStateBank not available');
+    return await func(account) as boolean;
+  }
+
+  async isLocalBank(account: string): Promise<boolean> {
+    const func = this._permissioning.getFunction('isLocalBank');
+    if (!func) throw new BlockchainError('Contract method isLocalBank not available');
+    return await func(account) as boolean;
+  }
+
+  async isPSP(account: string): Promise<boolean> {
+    const func = this._permissioning.getFunction('isPSP');
+    if (!func) throw new BlockchainError('Contract method isPSP not available');
+    return await func(account) as boolean;
+  }
+
+  async isMerchant(account: string): Promise<boolean> {
+    const func = this._permissioning.getFunction('isMerchant');
+    if (!func) throw new BlockchainError('Contract method isMerchant not available');
+    return await func(account) as boolean;
+  }
+
+  async isWalletHolder(account: string): Promise<boolean> {
+    const func = this._permissioning.getFunction('isWalletHolder');
+    if (!func) throw new BlockchainError('Contract method isWalletHolder not available');
+    return await func(account) as boolean;
   }
 
   /**
@@ -613,7 +767,7 @@ class BlockchainService {
       // If we cannot verify the holding limit (e.g. RPC failure, contract error), 
       // we MUST block the transaction to prevent potential breach of Digital Euro scheme rules.
       const msg = `Failed to verify holding limit for ${address}. Transaction blocked to preserve system integrity.`;
-      logger.error('BLOCKCHAIN_SERVICE', 'HOLDING_LIMIT_VERIFICATION_FAILED', { address, error: String(error) });
+      logger.error('BLOCKCHAIN_SERVICE', 'HOLDING_LIMIT_CHECK_FAILED', { address, error: String(error) });
       throw new BlockchainError(msg, error);
     }
   }

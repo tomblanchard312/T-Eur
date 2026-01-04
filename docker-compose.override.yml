@@ -1,0 +1,7 @@
+version: '3.8'
+
+services:
+  # Override node-exporter for Windows compatibility
+  node-exporter:
+    command:
+      - '--path.rootfs=/host'

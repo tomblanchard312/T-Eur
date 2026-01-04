@@ -5,37 +5,27 @@ services:
   besu-ecb-core:
     image: hyperledger/besu:24.1.0
     container_name: teur-besu-ecb-core
+    user: root
     ports:
       - "8545:8545"   # JSON-RPC
       - "8546:8546"   # WebSocket
       - "30303:30303" # P2P
     volumes:
       - besu-ecb-data:/data
-      - ./infra/besu/genesis.json:/config/genesis.json:ro
-      - ./infra/besu/config.toml:/config/config.toml:ro
+      - ./infra/besu/genesis.json/genesis.json:/config/genesis.json:ro
+      - ./infra/besu/config.toml/config.toml:/config/config.toml:ro
+      - ./infra/besu/nodekey.txt:/config/nodekey.txt:ro
     command:
       - --genesis-file=/config/genesis.json
       - --config-file=/config/config.toml
       - --data-path=/data
-      - --rpc-http-enabled
-      - --rpc-http-host=0.0.0.0
-      - --rpc-http-port=8545
-      - --rpc-http-cors-origins=*
-      - --rpc-http-api=ETH,NET,WEB3,ADMIN,TXPOOL
-      - --rpc-ws-enabled
-      - --rpc-ws-host=0.0.0.0
-      - --rpc-ws-port=8546
-      - --host-allowlist=*
-      - --p2p-enabled
-      - --p2p-port=30303
-      - --min-gas-price=0
     networks:
       - teur-csp
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8545"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' -f http://localhost:8545 > /dev/null"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
 
   # tEUR API Gateway
   teur-api:
@@ -249,7 +239,7 @@ services:
     command:
       - '--path.rootfs=/host'
     volumes:
-      - /:/host:ro,rslave
+      - ${HOST_ROOT:-/}:/host:ro
     networks:
       - teur-obs
     restart: unless-stopped

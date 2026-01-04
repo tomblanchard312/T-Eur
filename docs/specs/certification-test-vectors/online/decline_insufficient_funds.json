@@ -1,0 +1,46 @@
+{
+  "description": "Decline due to insufficient funds",
+  "request": {
+    "method": "POST",
+    "url": "/v1/transactions/authorize",
+    "headers": {
+      "Idempotency-Key": "test-decline-funds-001",
+      "X-Request-Id": "550e8400-e29b-41d4-a716-446655440002",
+      "X-Acquirer-Id": "acq_123",
+      "X-Merchant-Id": "m_123",
+      "X-Terminal-Id": "t_456",
+      "X-JWS-Signature": "eyJhbGciOiJFUzI1NiJ9..."
+    },
+    "body": {
+      "amount": { "value": "10000.00", "currency": "EUR" },
+      "merchant": { "merchant_id": "m_123", "category_code": "5411" },
+      "terminal": { "terminal_id": "t_456", "capabilities": ["NFC", "CHIP"] },
+      "payer": { "instrument_type": "TEUR_WALLET", "wallet_token": "insufficient_funds_token" },
+      "risk": { "device_attestation": "attest_123", "offline_eligible": false },
+      "metadata": { "local_txn_time_utc": "2026-01-03T13:40:12Z" }
+    }
+  },
+  "expected_response": {
+    "status": 200,
+    "body": {
+      "auth": {
+        "decision": "DECLINED",
+        "auth_code": "D54321",
+        "expires_at_utc": "2026-01-03T14:40:12Z",
+        "scheme_code": "51"
+      },
+      "ledger": {
+        "txn_id": "550e8400-e29b-41d4-a716-446655440003",
+        "status": "DECLINED"
+      }
+    }
+  },
+  "expected_scheme_code": "51",
+  "expected_audit_events": [
+    {
+      "event_type": "TRANSACTION_AUTHORIZE",
+      "correlation_id": "550e8400-e29b-41d4-a716-446655440002",
+      "actor": "acq_123"
+    }
+  ]
+}

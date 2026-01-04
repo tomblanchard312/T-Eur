@@ -1,15 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { blockchainService, ROLES } from '../services/blockchain.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, requireRole, validateKeyRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errors.js';
 import { strictRateLimiter } from '../middleware/common.js';
 import { logAuditEvent } from '../utils/logger.js';
+import { KeyRole } from '../services/governance.js';
 
 const router = Router();
 
 // All admin routes require authentication and ECB/NCB role
 router.use(authenticate);
 router.use(requireRole('ECB_ADMIN', 'NCB_OPERATOR'));
+router.use(validateKeyRole(KeyRole.OPERATIONAL)); // Minimum role for admin operations
 
 /**
  * @openapi
@@ -61,6 +63,7 @@ router.get(
 router.post(
   '/system/pause',
   requireRole('ECB_ADMIN'),
+  validateKeyRole(KeyRole.ISSUING), // ECB-only emergency power
   strictRateLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const result = await blockchainService.pause();
@@ -92,6 +95,7 @@ router.post(
 router.post(
   '/system/unpause',
   requireRole('ECB_ADMIN'),
+  validateKeyRole(KeyRole.ISSUING), // ECB-only emergency power
   strictRateLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const result = await blockchainService.unpause();

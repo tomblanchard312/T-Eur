@@ -30,6 +30,7 @@ export const updateLinkedBankSchema = z.object({
 export const mintSchema = z.object({
   to: ethereumAddress,
   amount: amount.describe('Amount in euro cents (e.g., 100000 = €1,000.00)'),
+  justification: z.string().min(1).max(256).describe('Legal justification for minting'),
   idempotencyKey: z.string().uuid(),
 }).strict();
 
@@ -44,6 +45,37 @@ export const transferSchema = z.object({
   to: ethereumAddress,
   amount: amount,
   idempotencyKey: z.string().uuid(),
+}).strict();
+
+// ============ Sovereign Monetary Controls ============
+
+export const freezeAccountSchema = z.object({
+  account: ethereumAddress,
+  reason: z.string().min(1).max(256).describe('Reason for freezing the account'),
+}).strict();
+
+export const unfreezeAccountSchema = z.object({
+  account: ethereumAddress,
+}).strict();
+
+export const escrowFundsSchema = z.object({
+  account: ethereumAddress,
+  amount: amount,
+  legalBasis: z.string().min(1).max(256).describe('Legal basis for escrow'),
+  expiry: z.number().int().min(0).describe('Expiry timestamp in seconds'),
+}).strict();
+
+export const releaseEscrowedFundsSchema = z.object({
+  account: ethereumAddress,
+  to: ethereumAddress,
+}).strict();
+
+export const burnEscrowedFundsSchema = z.object({
+  account: ethereumAddress,
+}).strict();
+
+export const accountParamSchema = z.object({
+  account: ethereumAddress,
 }).strict();
 
 // ============ Waterfall Operations ============

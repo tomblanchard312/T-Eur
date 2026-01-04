@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
 import { AuthenticationError, AuthorizationError } from './errors.js';
 import { logger } from '../utils/logger.js';
+import { governanceService, KeyRole, GovernanceError, KeyStatus } from '../services/governance.js';
 
 // Simulated API key store (in production, use database)
 // Resource management: explicit bound for in-memory key store to prevent DoS
@@ -36,6 +37,7 @@ declare module 'express-serve-static-core' {
       institutionName: string;
       roles: string[];
       permissions: string[];
+      keyId?: string;
     };
   }
 }
@@ -93,6 +95,19 @@ function initDemoKeys() {
   demoKeys.forEach(key => {
     if (apiKeys.size < MAX_API_KEYS) {
       apiKeys.set(key.keyId, key);
+      
+      // Also register in Governance Service for unified enforcement
+      try {
+        governanceService.registerKey({
+          keyId: key.keyId,
+          publicKey: `0xPUB_${key.keyId}`,
+          role: mapToGovernanceRole(key.roles[0]!),
+          ownerId: key.institutionId,
+          expiresAt: Date.now() + (365 * 24 * 60 * 60 * 1000),
+        }, 'ecb-root-01');
+      } catch (e) {
+        // Ignore if already registered
+      }
     } else {
       // OWASP: Security Logging and Monitoring - Log resource limit issues
       logger.error('AUTH_MIDDLEWARE', 'INTERNAL_SERVER_ERROR', { 
@@ -104,6 +119,16 @@ function initDemoKeys() {
   logger.info('AUTH_MIDDLEWARE', 'RESOURCE_CREATED', { 
     count: Math.min(demoKeys.length, MAX_API_KEYS) 
   });
+}
+
+function mapToGovernanceRole(role: string): KeyRole {
+  switch (role) {
+    case 'ECB_ADMIN': return KeyRole.ISSUING;
+    case 'NCB_OPERATOR': return KeyRole.OPERATIONAL;
+    case 'BANK_OPERATOR': return KeyRole.PARTICIPANT;
+    case 'PSP_OPERATOR': return KeyRole.PARTICIPANT;
+    default: return KeyRole.WALLET;
+  }
 }
 
 initDemoKeys();
@@ -141,6 +166,7 @@ export function apiKeyAuth(req: Request, _res: Response, next: NextFunction) {
     institutionName: keyRecord.institutionName,
     roles: keyRecord.roles,
     permissions: keyRecord.permissions,
+    keyId: keyRecord.keyId,
   };
 
   next();
@@ -198,6 +224,35 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+/**
+ * ECB-grade Governance: Validate Key Role
+ * 
+ * Enforces that the key used for the request is bound to the required role
+ * in the sovereign key hierarchy.
+ */
+export function validateKeyRole(requiredRole: KeyRole) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.auth?.keyId) {
+      return next(new AuthenticationError('Key ID required for governance validation'));
+    }
+
+    try {
+      governanceService.validateKeyUsage(req.auth.keyId, requiredRole);
+      next();
+    } catch (error) {
+      if (error instanceof GovernanceError) {
+        logger.warn('AUTH_MIDDLEWARE', 'KEY_VALIDATION_FAILED', {
+          keyId: req.auth.keyId.substring(0, 8),
+          requiredRole,
+          errorCode: error.code
+        });
+        return next(new AuthorizationError(error.message));
+      }
+      next(error);
+    }
+  };
+}
+
 // Permission check middleware
 export function requirePermission(...requiredPermissions: string[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
@@ -252,3 +307,4 @@ export function generateToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): string 
   // @ts-expect-error - expiresIn type is compatible at runtime
   return jwt.sign(payload, config.auth.jwtSecret, { expiresIn: config.auth.jwtExpiresIn });
 }
+

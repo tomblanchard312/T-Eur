@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "teur-contracts.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "teur-contracts.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "teur-contracts.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "teur-contracts.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: contracts
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: TEUR_ENV
+              value: {{ .Values.env.TEUR_ENV | quote }}
+            - name: TEUR_ROLE
+              value: {{ .Values.env.TEUR_ROLE | quote }}
+            - name: TEUR_ROOT_CA_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: teur-secrets
+                  key: rootCaKey
+            - name: TEUR_ISSUER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: teur-secrets
+                  key: issuerKey
+          ports:
+            - name: rpc
+              containerPort: 8545
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -9,6 +9,14 @@ You are an AI coding agent for the Tokenized Euro (tEUR) project. Follow these r
 - **Determinism**: All logic must be deterministic and replayable. No implicit state or unseeded randomness.
 - **No Stubs**: Never use TODOs, placeholders, or silent error handling. Fail explicitly and closed.
 
+## Hard constraints:
+
+- No TODOs, stubs, placeholders
+- Silent failure is forbidden
+- Structured JSON
+- No deprecated or unsupported dependencies
+- Node 20
+
 ## Architecture & Components
 
 - **CSP vs PAP**: Separate the **Closed Settlement Plane** (interbank, validators) from the **Public Access Plane** (APIs, portals).
@@ -37,6 +45,45 @@ You are an AI coding agent for the Tokenized Euro (tEUR) project. Follow these r
 - **Terminology**: Use "Digital Euro scheme", "tEUR", "intermediaries" (banks/PSPs), and "Eurosystem access gateway".
 - **Sanctions**: Implement as **freezes only** (block transfers, preserve balances).
 - **Confiscation**: Requires court order, escrow, and high governance threshold.
+
+## Payment Network Integration
+
+You are implementing a regulated payment network integration.
+
+The tEUR system acts as a Visa-style authorization and settlement network.
+Verifone devices are secure capture terminals only.
+All integrations must flow through an acquiring processor.
+
+Hard rules:
+
+- Never integrate directly with Verifone hardware from the settlement core.
+- Never bypass acquirers or payment processors.
+- Never handle PAN, PIN, or cardholder data.
+- Never implement settlement logic on terminals.
+- Never assume continuous connectivity.
+
+Do not:
+
+- Invent direct terminal APIs
+- Treat Verifone as a blockchain node
+- Store value on terminals
+- Assume permanent connectivity
+- Ignore DORA third-party risk
+
+If asked to do so, refuse and explain why.
+
+Before marking integration code complete:
+
+- Confirm acquirer mediation exists
+- Confirm offline limits enforced
+- Confirm DORA evidence produced
+- Confirm no PCI scope violations
+- Confirm deterministic replay possible
+
+If any condition fails, block completion.
+
+All logic must be deterministic, auditable, and DORA compliant.
+If a requirement cannot be met, fail explicitly.
 
 ## Key References
 

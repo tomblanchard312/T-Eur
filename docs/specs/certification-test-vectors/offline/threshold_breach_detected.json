@@ -1,0 +1,51 @@
+{
+  "description": "Detection of offline transaction threshold breach",
+  "request": {
+    "method": "POST",
+    "url": "/v1/transactions/advice",
+    "headers": {
+      "Idempotency-Key": "test-threshold-breach-001",
+      "X-Request-Id": "550e8400-e29b-41d4-a716-446655440017",
+      "X-Acquirer-Id": "acq_123",
+      "X-Merchant-Id": "m_123",
+      "X-Terminal-Id": "t_456",
+      "X-JWS-Signature": "eyJhbGciOiJFUzI1NiJ9..."
+    },
+    "body": {
+      "offline_transaction_id": "offline_txn_004",
+      "amount": { "value": "25.00", "currency": "EUR" },
+      "merchant": { "merchant_id": "m_123", "category_code": "5411" },
+      "terminal": { "terminal_id": "t_456", "capabilities": ["NFC", "CHIP", "OFFLINE"] },
+      "payer": { "instrument_type": "TEUR_WALLET", "wallet_token": "valid_token_123" },
+      "risk": { "device_attestation": "attest_123", "offline_eligible": true },
+      "metadata": { "local_txn_time_utc": "2025-01-03T12:45:00Z" }
+    }
+  },
+  "expected_response": {
+    "status": 200,
+    "body": {
+      "transaction_id": "txn_threshold_001",
+      "status": "ACCEPTED_WITH_FLAG",
+      "amount": { "value": "25.00", "currency": "EUR" },
+      "correlation_id": "550e8400-e29b-41d4-a716-446655440017",
+      "scheme_code": "00",
+      "processed_at": "2025-01-03T12:45:00.123Z",
+      "finality": "FINAL",
+      "flags": ["THRESHOLD_BREACH_DETECTED"]
+    }
+  },
+  "expected_scheme_code": "00",
+  "expected_audit_events": [
+    {
+      "event_type": "THRESHOLD_BREACH_DETECTED",
+      "transaction_id": "txn_threshold_001",
+      "offline_transaction_id": "offline_txn_004",
+      "amount": "25.00",
+      "currency": "EUR",
+      "threshold": "20.00",
+      "acquirer_id": "acq_123",
+      "merchant_id": "m_123",
+      "terminal_id": "t_456"
+    }
+  ]
+}

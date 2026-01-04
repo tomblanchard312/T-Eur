@@ -29,6 +29,7 @@ import adminRouter from './routes/admin.js';
 import fraudRouter from './routes/fraud.js';
 import auditRouter from './routes/audit.js';
 import merchantsRouter from './routes/merchants.js';
+import governanceRouter from './routes/governance.js';
 
 const app = express();
 
@@ -208,6 +209,7 @@ apiRouter.use('/admin', adminRouter);
 apiRouter.use('/fraud', fraudRouter);
 apiRouter.use('/audit', auditRouter);
 apiRouter.use('/merchants', merchantsRouter);
+apiRouter.use('/governance', governanceRouter);
 
 app.use('/api/v1', apiRouter);
 

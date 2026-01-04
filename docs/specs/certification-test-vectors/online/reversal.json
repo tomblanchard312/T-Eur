@@ -1,0 +1,47 @@
+{
+  "description": "Successful reversal of a previous authorization",
+  "request": {
+    "method": "POST",
+    "url": "/v1/transactions/reverse",
+    "headers": {
+      "Idempotency-Key": "test-reversal-001",
+      "X-Request-Id": "550e8400-e29b-41d4-a716-446655440011",
+      "X-Acquirer-Id": "acq_123",
+      "X-Merchant-Id": "m_123",
+      "X-Terminal-Id": "t_456",
+      "X-JWS-Signature": "eyJhbGciOiJFUzI1NiJ9..."
+    },
+    "body": {
+      "original_transaction_id": "txn_approve_001",
+      "amount": { "value": "12.34", "currency": "EUR" },
+      "reason": "CUSTOMER_CANCELLED",
+      "metadata": { "local_txn_time_utc": "2025-01-03T13:45:00Z" }
+    }
+  },
+  "expected_response": {
+    "status": 200,
+    "body": {
+      "transaction_id": "txn_reverse_001",
+      "status": "REVERSED",
+      "amount": { "value": "12.34", "currency": "EUR" },
+      "correlation_id": "550e8400-e29b-41d4-a716-446655440011",
+      "scheme_code": "00",
+      "processed_at": "2025-01-03T13:45:00.123Z",
+      "finality": "FINAL"
+    }
+  },
+  "expected_scheme_code": "00",
+  "expected_audit_events": [
+    {
+      "event_type": "TRANSACTION_REVERSED",
+      "transaction_id": "txn_reverse_001",
+      "original_transaction_id": "txn_approve_001",
+      "amount": "12.34",
+      "currency": "EUR",
+      "reason": "CUSTOMER_CANCELLED",
+      "acquirer_id": "acq_123",
+      "merchant_id": "m_123",
+      "terminal_id": "t_456"
+    }
+  ]
+}

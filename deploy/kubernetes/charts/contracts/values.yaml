@@ -1,0 +1,29 @@
+image:
+  repository: teur/contracts
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+env:
+  TEUR_ENV: ""
+  TEUR_ROLE: ""
+
+secrets:
+  rootCaKey: ""
+  issuerKey: ""
+
+service:
+  type: ClusterIP
+  port: 8545
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+networkPolicy:
+  enabled: true

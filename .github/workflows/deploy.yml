@@ -1,0 +1,97 @@
+name: Deploy tEUR
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - local
+          - lab
+          - test
+          - pilot
+          - prod
+      role:
+        description: 'Deployment role'
+        required: true
+        type: choice
+        options:
+          - central-bank
+          - state-bank
+          - local-bank
+          - psp
+      confirm_prod:
+        description: 'Confirm production deployment'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "prod" && "${{ github.event.inputs.confirm_prod }}" != "true" ]]; then
+            echo "Production deployment requires confirmation"
+            exit 1
+          fi
+
+          if [[ "${{ github.event.inputs.role }}" == "merchant-simulator" && "${{ github.event.inputs.environment }}" != "local" ]]; then
+            echo "merchant-simulator only allowed in local"
+            exit 1
+          fi
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v3
+
+      - name: Set up Terraform
+        if: github.event.inputs.environment != 'local'
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Set up kubectl
+        if: github.event.inputs.environment != 'local'
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure AWS credentials
+        if: github.event.inputs.environment != 'local'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Inject secrets
+        run: |
+          echo "TEUR_ROOT_CA_KEY=${{ secrets.TEUR_ROOT_CA_KEY }}" >> $GITHUB_ENV
+          echo "TEUR_ISSUER_KEY=${{ secrets.TEUR_ISSUER_KEY }}" >> $GITHUB_ENV
+          echo "TEUR_ACQUIRER_KEY=${{ secrets.TEUR_ACQUIRER_KEY }}" >> $GITHUB_ENV
+          echo "TEUR_PSP_KEY=${{ secrets.TEUR_PSP_KEY }}" >> $GITHUB_ENV
+
+      - name: Run deployment
+        run: |
+          chmod +x deploy/deploy.sh
+          if [[ "${{ github.event.inputs.environment }}" == "prod" ]]; then
+            ./deploy/deploy.sh --env ${{ github.event.inputs.environment }} --role ${{ github.event.inputs.role }} --confirm-prod
+          else
+            ./deploy/deploy.sh --env ${{ github.event.inputs.environment }} --role ${{ github.event.inputs.role }}
+          fi
+
+      - name: Prevent prod from non-main
+        if: github.event.inputs.environment == 'prod' && github.ref != 'refs/heads/main'
+        run: |
+          echo "Production deployments only allowed from main branch"
+          exit 1

@@ -1,0 +1,34 @@
+# Besu Configuration for tEUR Local Development
+
+# Network
+genesis-file = "/config/genesis.json"
+network-id = 31337
+
+# Node key
+node-private-key-file = "/config/nodekey.txt"
+
+# Mining (disabled for local dev)
+miner-enabled = false
+
+# RPC
+rpc-http-enabled = true
+rpc-http-host = "0.0.0.0"
+rpc-http-port = 8545
+rpc-http-cors-origins = ["*"]
+rpc-http-api = ["ETH", "NET", "WEB3", "ADMIN", "TXPOOL"]
+
+# WebSocket
+rpc-ws-enabled = true
+rpc-ws-host = "0.0.0.0"
+rpc-ws-port = 8546
+
+# P2P
+p2p-enabled = true
+p2p-host = "0.0.0.0"
+p2p-port = 30303
+
+# Host allowlist
+host-allowlist = ["*"]
+
+# Gas price
+min-gas-price = 0

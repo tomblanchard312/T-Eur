@@ -148,15 +148,15 @@ Rules:
 ### 5.3 PAP DNS Naming
 
 ```
-<service>.teuro.eu
+<service>.t-eursystem.eu
 ```
 
 Examples:
 
 ```
-api.teuro.eu
-status.teuro.eu
-docs.teuro.eu
+api.t-eursystem.eu
+status.t-eursystem.eu
+docs.t-eursystem.eu
 ```
 
 PAP outages must never affect CSP resolution.
