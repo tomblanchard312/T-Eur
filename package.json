@@ -3,8 +3,8 @@
     "@types/i18next": "^12.1.0",
     "@types/supertest": "^6.0.3",
     "@types/testing-library__react": "^10.0.1",
-    "ajv": "^8.17.1",
-    "eslint": "^9.39.2",
+    "ajv": "^8.18.0",
+    "eslint": "^10.0.0",
     "supertest": "^7.1.4",
     "vitest": "^4.0.16"
   },
