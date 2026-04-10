@@ -31,7 +31,7 @@ const reconciliationSchema = {
 
 const ajv = new Ajv({
   strict: true,
-  allErrors: true,
+  allErrors: false,
   removeAdditional: false,
   useDefaults: false,
   coerceTypes: false
