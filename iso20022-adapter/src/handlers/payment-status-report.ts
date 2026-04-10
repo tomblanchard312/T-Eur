@@ -6,16 +6,25 @@ import { logger } from '../logger';
 
 const builder = new XMLBuilder({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
+function isValidTxId(txId: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(txId);
+}
+
 /**
  * Generate ISO 20022 camt.053.001.02 - Bank to Customer Statement
  * Converts tEUR transaction to ISO 20022 format
  */
 export async function generatePaymentStatusReport(txId: string, txData?: any): Promise<string> {
   try {
+    if (!isValidTxId(txId)) {
+      throw new Error('Invalid transaction ID format');
+    }
+
     // If transaction data not provided, fetch it
     if (!txData) {
+      const requestUrl = new URL(`/transfers/${encodeURIComponent(txId)}`, config.teurApiUrl);
       const response = await axios.get(
-        `${config.teurApiUrl}/transfers/${txId}`,
+        requestUrl.toString(),
         {
           headers: {
             'X-API-Key': config.teurApiKey,
