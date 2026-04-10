@@ -37,7 +37,13 @@ app.post('/iso20022/pain.002', async (req, res) => {
 // Get payment status by transaction ID
 app.get('/payments/:txId/status', async (req, res) => {
   try {
-    const statusReport = await generatePaymentStatusReport(req.params.txId);
+    const txId = req.params.txId;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(txId)) {
+      res.status(400).json({ error: 'Invalid transaction ID format' });
+      return;
+    }
+
+    const statusReport = await generatePaymentStatusReport(txId);
     res.set('Content-Type', 'application/xml');
     res.send(statusReport);
   } catch (error) {
