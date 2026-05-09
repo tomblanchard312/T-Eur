@@ -11,9 +11,8 @@ export const MonetaryOps: React.FC = () => {
     type: 'mint' | 'burn' | 'suspend' | 'resume';
   }>({ isOpen: false, type: 'mint' });
 
-  const handleAction = (justification: string) => {
+  const handleAction = (_justification: string) => {
     // In real app, call API here
-    console.log(`Executing ${modalConfig.type} with justification: ${justification}`);
     toast.success(t('common.success'));
     setModalConfig({ ...modalConfig, isOpen: false });
   };

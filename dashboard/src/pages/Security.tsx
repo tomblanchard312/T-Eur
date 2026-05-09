@@ -12,8 +12,7 @@ export const Security: React.FC = () => {
     target?: string;
   }>({ isOpen: false, type: 'rotate' });
 
-  const handleAction = (justification: string) => {
-    console.log(`Executing ${modalConfig.type} on ${modalConfig.target} with justification: ${justification}`);
+  const handleAction = (_justification: string) => {
     toast.success(t('common.success'));
     setModalConfig({ ...modalConfig, isOpen: false });
   };
