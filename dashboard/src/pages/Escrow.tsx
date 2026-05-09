@@ -12,8 +12,7 @@ export const Escrow: React.FC = () => {
     targetId?: string;
   }>({ isOpen: false, type: 'release' });
 
-  const handleAction = (justification: string) => {
-    console.log(`Executing ${modalConfig.type} on ${modalConfig.targetId} with justification: ${justification}`);
+  const handleAction = (_justification: string) => {
     toast.success(t('common.success'));
     setModalConfig({ ...modalConfig, isOpen: false });
   };
