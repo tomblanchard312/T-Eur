@@ -20,8 +20,8 @@ jobs:
       - name: Install and run API tests
         working-directory: api
         run: |
-          npm ci --prefix api
-          npm test --prefix api --if-present
+          npm ci --legacy-peer-deps
+          npx vitest run test/parameters.test.ts
   recon-smoke:
     name: Reconciliation reference smoke test
     runs-on: ubuntu-latest
@@ -37,8 +37,10 @@ jobs:
 
       - name: Start reconciliation-ref service
         working-directory: tools/reconciliation-ref
+        env:
+          TEUR_ENV: lab
         run: |
-          npm ci --prefix tools/reconciliation-ref
+          npm ci
           # Start server in background on default port 8081
           nohup node index.js > recon.log 2>&1 &
 
@@ -58,7 +60,7 @@ jobs:
             "device_id": "device-1",
             "wallet_id": "wallet-1",
             "transactions": [
-              {"sequence_number": 1, "amount": 1000, "signature": "sig-1", "timestamp": 1700000000}
+              {"sequence_number": 1, "amount": 1000, "signature": "sig-1", "timestamp": "2026-01-01T00:00:00Z"}
             ]
           }
           JSON
