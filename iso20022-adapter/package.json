@@ -22,7 +22,7 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.22.2",
-    "axios": "^1.15.2",
+    "axios": "^1.16.0",
     "ethers": "^6.9.2",
     "xml2js": "^0.6.2",
     "fast-xml-parser": "^5.7.0",
