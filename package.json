@@ -6,7 +6,7 @@
     "ajv": "^8.18.0",
     "eslint": "^10.0.0",
     "supertest": "^7.1.4",
-    "vitest": "^4.0.16"
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "@testing-library/react": "^16.3.1",
