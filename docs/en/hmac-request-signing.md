@@ -21,7 +21,7 @@ Signed requests use:
 - `X-API-Key` (or the configured API key header)
 - `X-tEUR-Timestamp`: Unix time in milliseconds
 - `X-tEUR-Nonce`: unique 16-128 character value
-- `X-tEUR-Signature`: `v1=` followed by a lowercase or uppercase hexadecimal HMAC-SHA256 digest
+- `X-tEUR-Signature`: `v1=` followed by a hexadecimal HMAC-SHA256 digest
 
 GET, HEAD, OPTIONS, and bearer-token requests are not HMAC-signed by this middleware.
 
