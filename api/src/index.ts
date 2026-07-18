@@ -8,6 +8,7 @@ import { config, rulebookParameters } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { errorHandler } from './middleware/errors.js';
 import { requestId, requestLogger, standardRateLimiter, idempotency } from './middleware/common.js';
+import { requestSignature } from './middleware/requestSignature.js';
 import { blockchainService } from './services/blockchain.js';
 
 import healthRouter from './routes/health.js';
@@ -55,11 +56,26 @@ app.use(cors({
     config.auth.apiKeyHeader,
     'X-Request-Id',
     'X-Idempotency-Key',
+    'X-tEUR-Timestamp',
+    'X-tEUR-Nonce',
+    'X-tEUR-Signature',
   ],
 }));
 
-app.use(express.json({ limit: '1mb', strict: true }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(express.json({
+  limit: '1mb',
+  strict: true,
+  verify: (req, _res, buffer) => {
+    req.rawBody = Buffer.from(buffer);
+  },
+}));
+app.use(express.urlencoded({
+  extended: true,
+  limit: '1mb',
+  verify: (req, _res, buffer) => {
+    req.rawBody = Buffer.from(buffer);
+  },
+}));
 
 app.use((req, _res, next) => {
   if (req.query) {
@@ -83,12 +99,8 @@ const openApiSpec = {
     title: 'tEUR API Gateway',
     version: '1.0.0',
     description: 'REST API Gateway for the Tokenized Euro research implementation',
-    contact: {
-      name: 'tEUR Project',
-    },
-    license: {
-      name: 'MIT',
-    },
+    contact: { name: 'tEUR Project' },
+    license: { name: 'MIT' },
   },
   servers: [{ url: '/api/v1', description: 'API v1' }],
   tags: [
@@ -105,7 +117,25 @@ const openApiSpec = {
         type: 'apiKey',
         in: 'header',
         name: config.auth.apiKeyHeader,
-        description: 'Institution API key',
+        description: 'Institution API key identifier',
+      },
+      hmacTimestamp: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-tEUR-Timestamp',
+        description: 'Unix timestamp in milliseconds used in the HMAC canonical request',
+      },
+      hmacNonce: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-tEUR-Nonce',
+        description: 'Unique 16-128 character nonce used once within the signature window',
+      },
+      hmacSignature: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-tEUR-Signature',
+        description: 'v1=<hex HMAC-SHA256 signature>',
       },
       bearerAuth: {
         type: 'http',
@@ -165,7 +195,10 @@ const openApiSpec = {
       },
     },
   },
-  security: [{ apiKey: [] }, { bearerAuth: [] }],
+  security: [
+    { apiKey: [], hmacTimestamp: [], hmacNonce: [], hmacSignature: [] },
+    { bearerAuth: [] },
+  ],
 };
 
 if (config.enableApiDocs) {
@@ -176,6 +209,7 @@ if (config.enableApiDocs) {
 }
 
 const apiRouter = express.Router();
+apiRouter.use(requestSignature);
 apiRouter.use(idempotency);
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/wallets', walletsRouter);
@@ -241,6 +275,7 @@ async function start(): Promise<void> {
         docsEnabled: config.enableApiDocs,
         blockchainInitialized,
         trustProxy: config.trustProxy,
+        hmacSigningRequired: process.env['REQUIRE_HMAC_SIGNATURES'] ?? 'environment-default',
       },
     });
 
