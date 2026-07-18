@@ -34,7 +34,7 @@ static_resources:
                 use_remote_address: true
                 request_headers_to_remove:
                   - x-teur-mtls-verified
-                  - x-teur-mtls-institution
+                  - x-teur-mtls-institution-id
                   - x-teur-mtls-fingerprint
                   - x-teur-mtls-issuer
                   - x-teur-ingress-token
@@ -51,10 +51,10 @@ static_resources:
                       request_headers_to_add:
                         - header:
                             key: x-teur-mtls-verified
-                            value: "SUCCESS"
+                            value: "true"
                           append_action: OVERWRITE_IF_EXISTS_OR_ADD
                         - header:
-                            key: x-teur-mtls-institution
+                            key: x-teur-mtls-institution-id
                             value: "%DOWNSTREAM_PEER_URI_SAN%"
                           append_action: OVERWRITE_IF_EXISTS_OR_ADD
                         - header:
