@@ -81,7 +81,7 @@ function loadConfig() {
     logLevel: process.env['LOG_LEVEL'],
     trustProxy: process.env['TRUST_PROXY'] ?? false,
     enableApiDocs: process.env['ENABLE_API_DOCS'] ?? permitsLocalDefaults,
-    allowDemoIdentities: process.env['ALLOW_DEMO_IDENTITIES'] ?? false,
+    allowDemoIdentities: process.env['ALLOW_DEMO_IDENTITIES'] ?? nodeEnv === 'test',
     blockchain: {
       rpcUrl: required('BLOCKCHAIN_RPC_URL', 'http://localhost:8545'),
       chainId: required('BLOCKCHAIN_CHAIN_ID', '31337'),
