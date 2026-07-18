@@ -11,6 +11,7 @@ const HEADER_INSTITUTION = 'x-teur-mtls-institution-id';
 const HEADER_FINGERPRINT = 'x-teur-mtls-fingerprint';
 const HEADER_ISSUER = 'x-teur-mtls-issuer';
 const HEADER_INGRESS_TOKEN = 'x-teur-ingress-token';
+const SPIFFE_PREFIX = 'spiffe://teur.example/institution/';
 const MTLS_HEADERS = [
   HEADER_VERIFIED,
   HEADER_INSTITUTION,
@@ -84,6 +85,13 @@ function hasAnyMtlsHeader(req: Request): boolean {
   return MTLS_HEADERS.some(header => singleHeader(req, header) !== undefined);
 }
 
+function normalizeInstitutionIdentity(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const candidate = value.startsWith(SPIFFE_PREFIX) ? value.substring(SPIFFE_PREFIX.length) : value;
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{1,127}$/.test(candidate)) return undefined;
+  return candidate;
+}
+
 function isProtectedRoute(req: Request): boolean {
   const method = req.method.toUpperCase();
   const path = req.path;
@@ -131,14 +139,12 @@ export function verifyInstitutionalMtls(req: Request, _res: Response, next: Next
   }
 
   const verified = singleHeader(req, HEADER_VERIFIED);
-  const institutionId = singleHeader(req, HEADER_INSTITUTION);
-  const fingerprint = singleHeader(req, HEADER_FINGERPRINT)?.toLowerCase();
+  const institutionId = normalizeInstitutionIdentity(singleHeader(req, HEADER_INSTITUTION));
+  const fingerprint = singleHeader(req, HEADER_FINGERPRINT)?.toLowerCase().replaceAll(':', '');
   const issuerId = singleHeader(req, HEADER_ISSUER);
 
   if (verified !== 'true') return next(new AuthenticationError('Client certificate was not verified'));
-  if (!institutionId || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{1,127}$/.test(institutionId)) {
-    return next(new AuthenticationError('Invalid certificate institution identity'));
-  }
+  if (!institutionId) return next(new AuthenticationError('Invalid certificate institution identity'));
   if (!fingerprint || !/^[a-f0-9]{64}$/.test(fingerprint)) {
     return next(new AuthenticationError('Invalid certificate fingerprint'));
   }
