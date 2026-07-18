@@ -11,6 +11,5 @@ interface ITokenLedgerV2 {
 
     function controllerMove(address from, address to, uint256 amount) external;
     function controllerMint(address to, uint256 amount, bytes32 clientKey) external;
-    function controllerBurn(address from, uint256 amount) external;
     function controllerBurn(address from, uint256 amount, bytes32 clientKey) external;
 }
