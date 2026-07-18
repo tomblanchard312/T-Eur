@@ -1,0 +1,95 @@
+static_resources:
+  listeners:
+    - name: institutional_mtls_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8443
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /etc/envoy/pki/server.crt
+                    private_key:
+                      filename: /etc/envoy/pki/server.key
+                validation_context:
+                  trusted_ca:
+                    filename: /etc/envoy/pki/ca.crt
+                  match_typed_subject_alt_names:
+                    - san_type: URI
+                      matcher:
+                        safe_regex:
+                          google_re2: {}
+                          regex: "^spiffe://teur\\.example/institution/[A-Za-z0-9._-]+$"
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: institutional_mtls
+                use_remote_address: true
+                request_headers_to_remove:
+                  - x-teur-mtls-verified
+                  - x-teur-mtls-institution
+                  - x-teur-mtls-fingerprint
+                  - x-teur-mtls-issuer
+                  - x-teur-ingress-token
+                route_config:
+                  name: api_routes
+                  virtual_hosts:
+                    - name: api
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: teur_api
+                      request_headers_to_add:
+                        - header:
+                            key: x-teur-mtls-verified
+                            value: "SUCCESS"
+                          append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                        - header:
+                            key: x-teur-mtls-institution
+                            value: "%DOWNSTREAM_PEER_URI_SAN%"
+                          append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                        - header:
+                            key: x-teur-mtls-fingerprint
+                            value: "%DOWNSTREAM_PEER_FINGERPRINT_256%"
+                          append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                        - header:
+                            key: x-teur-mtls-issuer
+                            value: "%DOWNSTREAM_PEER_ISSUER%"
+                          append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                        - header:
+                            key: x-teur-ingress-token
+                            value: "%ENVIRONMENT(TEUR_INGRESS_TOKEN)%"
+                          append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: teur_api
+      connect_timeout: 3s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: teur_api
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: api
+                      port_value: 3000
+admin:
+  access_log_path: /tmp/envoy-admin.log
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
