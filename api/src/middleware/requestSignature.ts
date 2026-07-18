@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { Request, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
 import { AuthenticationError } from './errors.js';
+import { institutionalMtlsGate } from './mtls.js';
 import { logger } from '../utils/logger.js';
 
 const TIMESTAMP_HEADER = 'x-teur-timestamp';
@@ -47,10 +48,12 @@ function bodyDigest(req: Request): string {
   return createHash('sha256').update(rawBody).digest('hex');
 }
 
-export function requestSignature(req: Request, _res: Response, next: NextFunction) {
-  if (!signingEnabled()) return next();
-  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
-  if (req.headers.authorization?.startsWith('Bearer ')) return next();
+export function requestSignature(req: Request, res: Response, next: NextFunction) {
+  const continueToMtls = () => institutionalMtlsGate(req, res, next);
+
+  if (!signingEnabled()) return continueToMtls();
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return continueToMtls();
+  if (req.headers.authorization?.startsWith('Bearer ')) return continueToMtls();
 
   const secret = signingSecret();
   if (!secret || secret.length < 32) {
@@ -110,7 +113,7 @@ export function requestSignature(req: Request, _res: Response, next: NextFunctio
   }
 
   usedNonces.set(nonceKey, now + maxSkew);
-  next();
+  continueToMtls();
 }
 
 declare module 'express-serve-static-core' {
