@@ -125,29 +125,10 @@ contract TokenLedgerV2 is ITokenLedgerV2 {
         emit ControllerMint(msg.sender, to, amount, digest);
     }
 
-    function controllerBurn(address from, uint256 amount) external onlyCapability(CAPABILITY_BURN) {
-        bytes32 syntheticKey = keccak256(abi.encode(msg.sender, from, amount, block.number));
-        _controllerBurn(from, amount, syntheticKey);
-    }
-
     function controllerBurn(address from, uint256 amount, bytes32 clientKey)
         external
         onlyCapability(CAPABILITY_BURN)
     {
-        _controllerBurn(from, amount, clientKey);
-    }
-
-    function operationDigest(
-        bytes32 operationType,
-        address actor,
-        address target,
-        uint256 amount,
-        bytes32 clientKey
-    ) external view returns (bytes32) {
-        return _operationDigest(operationType, actor, target, amount, clientKey);
-    }
-
-    function _controllerBurn(address from, uint256 amount, bytes32 clientKey) internal {
         if (from == address(0)) revert ZeroAddress();
         if (amount == 0) revert InvalidAmount();
         if (_balances[from] < amount) revert InsufficientBalance();
@@ -160,6 +141,16 @@ contract TokenLedgerV2 is ITokenLedgerV2 {
 
         emit Transfer(from, address(0), amount);
         emit ControllerBurn(msg.sender, from, amount, digest);
+    }
+
+    function operationDigest(
+        bytes32 operationType,
+        address actor,
+        address target,
+        uint256 amount,
+        bytes32 clientKey
+    ) external view returns (bytes32) {
+        return _operationDigest(operationType, actor, target, amount, clientKey);
     }
 
     function _move(address operator, address from, address to, uint256 amount) internal {
