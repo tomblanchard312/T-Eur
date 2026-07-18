@@ -1,26 +1,16 @@
-/**
- * PRODUCTION-READY CHECKLIST:
- * - Build without warnings: SATISFIED (npx tsc returns 0 errors)
- * - No TODOs or stubs: SATISFIED (API source cleared of functional TODOs)
- * - Explicit error handling: SATISFIED (Strict type checking and centralized error handler)
- * - Bounded resource usage: SATISFIED (Idempotency, Audit, and Manifest stores have explicit limits)
- * - Test-covered for edge cases: SATISFIED (16/16 tests passing, including integrity edge cases)
- * - Deterministic and replayable: SATISFIED (Idempotency middleware active on all state-changing routes)
- */
-
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import swaggerUi from 'swagger-ui-express';
-import { config } from './config/index.js';
-import { rulebookParameters } from './config/index.js';
+import type { Server } from 'node:http';
+import { config, rulebookParameters } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { errorHandler } from './middleware/errors.js';
 import { requestId, requestLogger, standardRateLimiter, idempotency } from './middleware/common.js';
+import { requestSignature } from './middleware/requestSignature.js';
 import { blockchainService } from './services/blockchain.js';
 
-// Import routes
 import healthRouter from './routes/health.js';
 import walletsRouter from './routes/wallets.js';
 import transfersRouter from './routes/transfers.js';
@@ -32,94 +22,94 @@ import merchantsRouter from './routes/merchants.js';
 import governanceRouter from './routes/governance.js';
 
 const app = express();
+let server: Server | undefined;
+let shuttingDown = false;
 
-// Trust proxy for rate limiting behind reverse proxy
-app.set('trust proxy', 1);
+if (config.trustProxy !== false) {
+  app.set('trust proxy', config.trustProxy);
+}
 
-// Security middleware
-// OWASP: Security Misconfiguration - Use Helmet for secure headers
+app.disable('x-powered-by');
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: config.enableApiDocs ? ["'self'", "'unsafe-inline'"] : ["'self'"],
       imgSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
     },
   },
-  // OWASP: Sensitive Data Exposure - Prevent sniffing and clickjacking
-  hsts: true,
+  hsts: config.nodeEnv === 'production' ? { maxAge: 31536000, includeSubDomains: true } : false,
   noSniff: true,
   referrerPolicy: { policy: 'same-origin' },
 }));
 
-// CORS configuration
-// OWASP: Security Misconfiguration - Restrict CORS origins
 app.use(cors({
   origin: config.cors.origin,
   credentials: config.cors.credentials,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', config.auth.apiKeyHeader, 'X-Request-Id', 'X-Idempotency-Key'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    config.auth.apiKeyHeader,
+    'X-Request-Id',
+    'X-Idempotency-Key',
+    'X-tEUR-Timestamp',
+    'X-tEUR-Nonce',
+    'X-tEUR-Signature',
+  ],
 }));
 
-// Body parsing
-// OWASP: Injection/DoS - Limit body size and enforce strict JSON
-app.use(express.json({ 
+app.use(express.json({
   limit: '1mb',
-  strict: true, // Only accept arrays and objects
+  strict: true,
+  verify: (req, _res, buffer) => {
+    req.rawBody = Buffer.from(buffer);
+  },
 }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(express.urlencoded({
+  extended: true,
+  limit: '1mb',
+  verify: (req, _res, buffer) => {
+    req.rawBody = Buffer.from(buffer);
+  },
+}));
 
-// OWASP: Injection - Prevent HTTP Parameter Pollution
 app.use((req, _res, next) => {
   if (req.query) {
     for (const key in req.query) {
       if (Array.isArray(req.query[key])) {
-        req.query[key] = (req.query[key] as any)[0];
+        req.query[key] = req.query[key][0];
       }
     }
   }
   next();
 });
 
-// Compression
 app.use(compression());
-
-// Request ID and logging
 app.use(requestId);
 app.use(requestLogger);
-
-// Rate limiting (applied after auth for better key generation)
 app.use(standardRateLimiter);
 
-// OpenAPI Documentation
 const openApiSpec = {
   openapi: '3.0.3',
   info: {
     title: 'tEUR API Gateway',
     version: '1.0.0',
-    description: 'REST API Gateway for the Tokenized Euro (tEUR) Digital Currency',
-    contact: {
-      name: 'tEUR Support',
-      email: 'support@teuro.eu',
-    },
-    license: {
-      name: 'Proprietary',
-    },
+    description: 'REST API Gateway for the Tokenized Euro research implementation',
+    contact: { name: 'tEUR Project' },
+    license: { name: 'MIT' },
   },
-  servers: [
-    {
-      url: '/api/v1',
-      description: 'API v1',
-    },
-  ],
+  servers: [{ url: '/api/v1', description: 'API v1' }],
   tags: [
     { name: 'Health', description: 'Health check endpoints' },
     { name: 'Wallets', description: 'Wallet management operations' },
     { name: 'Transfers', description: 'Token transfer and waterfall operations' },
     { name: 'Conditional Payments', description: 'Escrow and conditional payment operations' },
-    { name: 'Admin', description: 'Administrative operations (ECB/NCB only)' },
-    { name: 'Audit', description: 'Audit log querying and compliance (Admin only)' },
+    { name: 'Admin', description: 'Administrative operations' },
+    { name: 'Audit', description: 'Audit and compliance operations' },
   ],
   components: {
     securitySchemes: {
@@ -127,13 +117,31 @@ const openApiSpec = {
         type: 'apiKey',
         in: 'header',
         name: config.auth.apiKeyHeader,
-        description: 'API key for institution authentication',
+        description: 'Institution API key identifier',
+      },
+      hmacTimestamp: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-tEUR-Timestamp',
+        description: 'Unix timestamp in milliseconds used in the HMAC canonical request',
+      },
+      hmacNonce: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-tEUR-Nonce',
+        description: 'Unique 16-128 character nonce used once within the signature window',
+      },
+      hmacSignature: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-tEUR-Signature',
+        description: 'v1=<hex HMAC-SHA256 signature>',
       },
       bearerAuth: {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'JWT token for session authentication',
+        description: 'JWT session token',
       },
     },
     schemas: {
@@ -168,7 +176,7 @@ const openApiSpec = {
         properties: {
           from: { type: 'string', pattern: '^0x[a-fA-F0-9]{40}$' },
           to: { type: 'string', pattern: '^0x[a-fA-F0-9]{40}$' },
-          amount: { type: 'integer', description: 'Amount in euro cents' },
+          amount: { type: 'integer', minimum: 1, description: 'Amount in euro cents' },
           idempotencyKey: { type: 'string', format: 'uuid' },
         },
       },
@@ -177,7 +185,7 @@ const openApiSpec = {
         required: ['payee', 'amount', 'conditionType', 'conditionData', 'expiresAt', 'idempotencyKey'],
         properties: {
           payee: { type: 'string', pattern: '^0x[a-fA-F0-9]{40}$' },
-          amount: { type: 'integer', description: 'Amount in euro cents' },
+          amount: { type: 'integer', minimum: 1, description: 'Amount in euro cents' },
           conditionType: { type: 'string', enum: ['DELIVERY', 'TIME_LOCK', 'MILESTONE', 'ORACLE', 'MULTI_SIG'] },
           conditionData: { type: 'string', pattern: '^0x[a-fA-F0-9]{64}$' },
           expiresAt: { type: 'integer', description: 'Unix timestamp' },
@@ -188,18 +196,20 @@ const openApiSpec = {
     },
   },
   security: [
-    { apiKey: [] },
+    { apiKey: [], hmacTimestamp: [], hmacNonce: [], hmacSignature: [] },
     { bearerAuth: [] },
   ],
 };
 
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
-  customSiteTitle: 'tEUR API Documentation',
-  customCss: '.swagger-ui .topbar { display: none }',
-}));
+if (config.enableApiDocs) {
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+    customSiteTitle: 'tEUR API Documentation',
+    customCss: '.swagger-ui .topbar { display: none }',
+  }));
+}
 
-// API Routes
 const apiRouter = express.Router();
+apiRouter.use(requestSignature);
 apiRouter.use(idempotency);
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/wallets', walletsRouter);
@@ -210,15 +220,17 @@ apiRouter.use('/fraud', fraudRouter);
 apiRouter.use('/audit', auditRouter);
 apiRouter.use('/merchants', merchantsRouter);
 apiRouter.use('/governance', governanceRouter);
-
 app.use('/api/v1', apiRouter);
 
-// Root redirect to docs
 app.get('/', (_req, res) => {
-  res.redirect('/api/docs');
+  res.json({
+    service: 'tEUR API Gateway',
+    version: '1.0.0',
+    status: 'available',
+    documentation: config.enableApiDocs ? '/api/docs' : undefined,
+  });
 });
 
-// 404 handler
 app.use((_req, res) => {
   res.status(404).json({
     error: {
@@ -228,77 +240,104 @@ app.use((_req, res) => {
   });
 });
 
-// Global error handler
 app.use(errorHandler);
 
-// Start server
-async function start() {
-  let initFailed = false;
+function sanitizedErrorCode(error: unknown): string {
+  if (error instanceof Error && error.name) return error.name;
+  return 'UNKNOWN_ERROR';
+}
+
+async function start(): Promise<void> {
+  let blockchainInitialized = false;
   try {
-    // Initialize blockchain service
     await blockchainService.initialize();
+    blockchainInitialized = true;
   } catch (error) {
-    initFailed = true;
-    logger.error('API_GATEWAY', 'INTERNAL_SERVER_ERROR', { 
+    logger.error('API_GATEWAY', 'INTERNAL_SERVER_ERROR', {
       errorCode: 'BLOCKCHAIN_INIT_FAILED',
-      details: { error: String(error) }
+      details: { errorType: sanitizedErrorCode(error) },
     });
-    // During test runs we prefer to continue without a live blockchain (tests may stub/mock it)
     if (!(config.nodeEnv === 'test' || process.env.VITEST)) {
-      logger.error('API_GATEWAY', 'INTERNAL_SERVER_ERROR', { 
-        errorCode: 'SERVER_START_FAILED',
-        details: { error: String(error) }
-      });
-      process.exit(1);
-    } else {
-      logger.warn('API_GATEWAY', 'INTERNAL_SERVER_ERROR', { 
-        errorCode: 'BLOCKCHAIN_UNAVAILABLE_TEST_MODE'
-      });
+      process.exitCode = 1;
+      return;
     }
+    logger.warn('API_GATEWAY', 'INTERNAL_SERVER_ERROR', {
+      errorCode: 'BLOCKCHAIN_UNAVAILABLE_TEST_MODE',
+    });
   }
 
-  app.listen(config.port, () => {
+  server = app.listen(config.port, () => {
     logger.info('API_GATEWAY', 'RESOURCE_CREATED', {
       resourceId: `port-${config.port}`,
       details: {
         port: config.port,
         env: config.nodeEnv,
-        docsUrl: `http://localhost:${config.port}/api/docs`,
-        blockchainInitialized: !initFailed,
-      }
+        docsEnabled: config.enableApiDocs,
+        blockchainInitialized,
+        trustProxy: config.trustProxy,
+        hmacSigningRequired: process.env['REQUIRE_HMAC_SIGNATURES'] ?? 'environment-default',
+      },
     });
-    // Log loaded parameters for visibility in lab/dev only
-    try {
-      logger.info('API_GATEWAY', 'RESOURCE_UPDATED', { 
+
+    if (config.nodeEnv === 'development' || config.nodeEnv === 'test') {
+      logger.info('API_GATEWAY', 'RESOURCE_UPDATED', {
         resourceId: 'rulebook-parameters',
-        details: { parameters: rulebookParameters } 
+        details: { parameters: rulebookParameters },
       });
-    } catch (e) {
-      logger.warn('API_GATEWAY', 'INTERNAL_SERVER_ERROR', { 
-        errorCode: 'RULEBOOK_PARAMS_UNAVAILABLE',
-        details: { error: String(e) }
+    } else {
+      logger.info('API_GATEWAY', 'RESOURCE_UPDATED', {
+        resourceId: 'rulebook-parameters',
+        details: { loaded: true },
       });
     }
   });
 }
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('API_GATEWAY', 'RESOURCE_DELETED', { 
+function shutdown(signal: NodeJS.Signals): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  logger.info('API_GATEWAY', 'RESOURCE_DELETED', {
     resourceId: 'process',
-    details: { signal: 'SIGTERM' }
+    details: { signal, phase: 'shutdown_started' },
   });
-  process.exit(0);
-});
 
-process.on('SIGINT', () => {
-  logger.info('API_GATEWAY', 'RESOURCE_DELETED', { 
-    resourceId: 'process',
-    details: { signal: 'SIGINT' }
+  const forceExitTimer = setTimeout(() => {
+    logger.error('API_GATEWAY', 'INTERNAL_SERVER_ERROR', {
+      errorCode: 'GRACEFUL_SHUTDOWN_TIMEOUT',
+    });
+    process.exit(1);
+  }, 10_000);
+  forceExitTimer.unref();
+
+  if (!server) {
+    clearTimeout(forceExitTimer);
+    process.exit(0);
+    return;
+  }
+
+  server.close(error => {
+    clearTimeout(forceExitTimer);
+    if (error) {
+      logger.error('API_GATEWAY', 'INTERNAL_SERVER_ERROR', {
+        errorCode: 'HTTP_SERVER_CLOSE_FAILED',
+        details: { errorType: sanitizedErrorCode(error) },
+      });
+      process.exit(1);
+      return;
+    }
+
+    logger.info('API_GATEWAY', 'RESOURCE_DELETED', {
+      resourceId: 'http-server',
+      details: { phase: 'shutdown_complete' },
+    });
+    process.exit(0);
   });
-  process.exit(0);
-});
+}
 
-start();
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
 
-export { app };
+void start();
+
+export { app, start, shutdown };
