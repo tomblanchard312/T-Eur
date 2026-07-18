@@ -53,6 +53,7 @@ contract EscrowControllerV2 {
     error InvalidReference();
     error InvalidState();
     error NotExpired();
+    error PastExpiry();
     error OperationAlreadyUsed();
 
     modifier onlyAuthority() {
@@ -128,7 +129,7 @@ contract EscrowControllerV2 {
     }
 
     function releaseEscrow(bytes32 escrowId, bytes32 clientKey) external onlyAuthority {
-        EscrowCase storage escrowCase = _requireActive(escrowId);
+        EscrowCase storage escrowCase = _requireActiveBeforeExpiry(escrowId);
         bytes32 operationDigest = _operationDigest(
             keccak256("RELEASE_ESCROW"),
             msg.sender,
@@ -147,7 +148,7 @@ contract EscrowControllerV2 {
     }
 
     function burnEscrow(bytes32 escrowId, bytes32 clientKey) external onlyAuthority {
-        EscrowCase storage escrowCase = _requireActive(escrowId);
+        EscrowCase storage escrowCase = _requireActiveBeforeExpiry(escrowId);
         bytes32 operationDigest = _operationDigest(
             keccak256("BURN_ESCROW"),
             msg.sender,
@@ -165,7 +166,7 @@ contract EscrowControllerV2 {
     }
 
     function cancelEscrow(bytes32 escrowId, bytes32 clientKey) external onlyAuthority {
-        EscrowCase storage escrowCase = _requireActive(escrowId);
+        EscrowCase storage escrowCase = _requireActiveBeforeExpiry(escrowId);
         bytes32 operationDigest = _operationDigest(
             keccak256("CANCEL_ESCROW"),
             msg.sender,
@@ -212,6 +213,15 @@ contract EscrowControllerV2 {
     function _requireActive(bytes32 escrowId) internal view returns (EscrowCase storage escrowCase) {
         escrowCase = _cases[escrowId];
         if (escrowCase.state != EscrowState.Active) revert InvalidState();
+    }
+
+    function _requireActiveBeforeExpiry(bytes32 escrowId)
+        internal
+        view
+        returns (EscrowCase storage escrowCase)
+    {
+        escrowCase = _requireActive(escrowId);
+        if (escrowCase.expiry != 0 && block.timestamp >= escrowCase.expiry) revert PastExpiry();
     }
 
     function _closeEscrow(EscrowCase storage escrowCase, EscrowState finalState) internal {
