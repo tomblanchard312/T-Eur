@@ -3,10 +3,8 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
 import { AuthenticationError, AuthorizationError } from './errors.js';
 import { logger } from '../utils/logger.js';
-import { governanceService, KeyRole, GovernanceError, KeyStatus } from '../services/governance.js';
+import { governanceService, KeyRole, GovernanceError } from '../services/governance.js';
 
-// Simulated API key store (in production, use database)
-// Resource management: explicit bound for in-memory key store to prevent DoS
 const MAX_API_KEYS = 1000;
 const apiKeys = new Map<string, ApiKeyRecord>();
 
@@ -26,6 +24,7 @@ interface JwtPayload {
   institutionId: string;
   roles: string[];
   permissions: string[];
+  keyId?: string;
   iat: number;
   exp: number;
 }
@@ -42,12 +41,18 @@ declare module 'express-serve-static-core' {
   }
 }
 
-// Initialize demo API keys for development
-function initDemoKeys() {
-  // Security: Never initialize demo keys in production
-  if (config.nodeEnv === 'production') {
-    return;
+function mapToGovernanceRole(role: string): KeyRole {
+  switch (role) {
+    case 'ECB_ADMIN': return KeyRole.ISSUING;
+    case 'NCB_OPERATOR': return KeyRole.OPERATIONAL;
+    case 'BANK_OPERATOR':
+    case 'PSP_OPERATOR': return KeyRole.PARTICIPANT;
+    default: return KeyRole.WALLET;
   }
+}
+
+function initDemoKeys() {
+  if (!config.allowDemoIdentities) return;
 
   const demoKeys: ApiKeyRecord[] = [
     {
@@ -92,144 +97,114 @@ function initDemoKeys() {
     },
   ];
 
-  demoKeys.forEach(key => {
-    if (apiKeys.size < MAX_API_KEYS) {
-      apiKeys.set(key.keyId, key);
-      
-      // Also register in Governance Service for unified enforcement
-      try {
-        governanceService.registerKey({
-          keyId: key.keyId,
-          publicKey: `0xPUB_${key.keyId}`,
-          role: mapToGovernanceRole(key.roles[0]!),
-          ownerId: key.institutionId,
-          expiresAt: Date.now() + (365 * 24 * 60 * 60 * 1000),
-        }, 'ecb-root-01');
-      } catch (e) {
-        // Ignore if already registered
-      }
-    } else {
-      // OWASP: Security Logging and Monitoring - Log resource limit issues
-      logger.error('AUTH_MIDDLEWARE', 'INTERNAL_SERVER_ERROR', { 
-        resourceId: key.keyId, 
-        errorCode: 'API_KEY_LIMIT_EXCEEDED' 
+  for (const key of demoKeys) {
+    if (apiKeys.size >= MAX_API_KEYS) {
+      logger.error('AUTH_MIDDLEWARE', 'INTERNAL_SERVER_ERROR', {
+        resourceId: key.keyId,
+        errorCode: 'API_KEY_LIMIT_EXCEEDED',
+      });
+      break;
+    }
+
+    apiKeys.set(key.keyId, key);
+    try {
+      governanceService.registerKey({
+        keyId: key.keyId,
+        publicKey: `0xPUB_${key.keyId}`,
+        role: mapToGovernanceRole(key.roles[0]!),
+        ownerId: key.institutionId,
+        expiresAt: Date.now() + (365 * 24 * 60 * 60 * 1000),
+      }, 'ecb-root-01');
+    } catch (error) {
+      logger.warn('AUTH_MIDDLEWARE', 'RESOURCE_UPDATED', {
+        resourceId: key.keyId,
+        errorCode: 'DEMO_GOVERNANCE_KEY_NOT_REGISTERED',
+        details: { error: error instanceof Error ? error.name : 'unknown' },
       });
     }
-  });
-  logger.info('AUTH_MIDDLEWARE', 'RESOURCE_CREATED', { 
-    count: Math.min(demoKeys.length, MAX_API_KEYS) 
-  });
-}
-
-function mapToGovernanceRole(role: string): KeyRole {
-  switch (role) {
-    case 'ECB_ADMIN': return KeyRole.ISSUING;
-    case 'NCB_OPERATOR': return KeyRole.OPERATIONAL;
-    case 'BANK_OPERATOR': return KeyRole.PARTICIPANT;
-    case 'PSP_OPERATOR': return KeyRole.PARTICIPANT;
-    default: return KeyRole.WALLET;
   }
+
+  logger.warn('AUTH_MIDDLEWARE', 'RESOURCE_CREATED', {
+    count: Math.min(demoKeys.length, MAX_API_KEYS),
+    details: { mode: 'demo-identities-enabled' },
+  });
 }
 
 initDemoKeys();
 
-// API Key authentication
 export function apiKeyAuth(req: Request, _res: Response, next: NextFunction) {
-  // OWASP: Broken Authentication - Use secure header for API keys
-  const apiKey = req.headers[config.auth.apiKeyHeader.toLowerCase()] as string;
-  
-  if (!apiKey) {
-    return next(new AuthenticationError('API key required'));
-  }
+  const headerValue = req.headers[config.auth.apiKeyHeader.toLowerCase()];
+  const apiKey = Array.isArray(headerValue) ? headerValue[0] : headerValue;
 
-  // OWASP: Broken Authentication - Constant-time lookup via Map
+  if (!apiKey) return next(new AuthenticationError('API key required'));
+
   const keyRecord = apiKeys.get(apiKey);
-  
   if (!keyRecord) {
-    // OWASP: Security Logging and Monitoring - Log failed auth attempts
-    logger.warn('AUTH_MIDDLEWARE', 'AUTHENTICATION_FAILED', { 
+    logger.warn('AUTH_MIDDLEWARE', 'AUTHENTICATION_FAILED', {
       path: req.path,
       method: req.method,
-      // Only log prefix to avoid leaking full key in logs
       resourceId: apiKey.substring(0, 8),
     });
     return next(new AuthenticationError('Invalid API key'));
   }
 
-  if (!keyRecord.isActive) {
-    return next(new AuthenticationError('API key is inactive'));
-  }
+  if (!keyRecord.isActive) return next(new AuthenticationError('API key is inactive'));
 
-  // OWASP: Broken Access Control - Populate auth context for downstream checks
   req.auth = {
     institutionId: keyRecord.institutionId,
     institutionName: keyRecord.institutionName,
-    roles: keyRecord.roles,
-    permissions: keyRecord.permissions,
+    roles: [...keyRecord.roles],
+    permissions: [...keyRecord.permissions],
     keyId: keyRecord.keyId,
   };
-
   next();
 }
 
-// JWT authentication (for session-based access)
 export function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  // OWASP: Broken Authentication - Use standard Bearer token
   const authHeader = req.headers.authorization;
-  
   if (!authHeader?.startsWith('Bearer ')) {
     return next(new AuthenticationError('Bearer token required'));
   }
 
   const token = authHeader.substring(7);
-
   try {
-    // OWASP: Sensitive Data Exposure - Verify JWT with strong secret
-    const payload = jwt.verify(token, config.auth.jwtSecret) as JwtPayload;
-    
+    const payload = jwt.verify(token, config.auth.jwtSecret, {
+      algorithms: ['HS256'],
+      issuer: config.auth.jwtIssuer,
+      audience: config.auth.jwtAudience,
+    }) as JwtPayload;
+
+    if (!payload.sub || !payload.institutionId || !Array.isArray(payload.roles) || !Array.isArray(payload.permissions)) {
+      return next(new AuthenticationError('Invalid token claims'));
+    }
+
     req.auth = {
       institutionId: payload.institutionId,
       institutionName: payload.sub,
-      roles: payload.roles,
-      permissions: payload.permissions,
+      roles: [...payload.roles],
+      permissions: [...payload.permissions],
+      keyId: payload.keyId,
     };
-
     next();
   } catch (error) {
-    // OWASP: Security Logging and Monitoring - Log JWT failures
-    logger.warn('AUTH_MIDDLEWARE', 'AUTHENTICATION_FAILED', { 
+    logger.warn('AUTH_MIDDLEWARE', 'AUTHENTICATION_FAILED', {
       path: req.path,
       method: req.method,
-      errorCode: error instanceof jwt.TokenExpiredError ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN'
+      errorCode: error instanceof jwt.TokenExpiredError ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
     });
-    
-    if (error instanceof jwt.TokenExpiredError) {
-      return next(new AuthenticationError('Token expired'));
-    }
-    return next(new AuthenticationError('Invalid token'));
+    return next(new AuthenticationError(error instanceof jwt.TokenExpiredError ? 'Token expired' : 'Invalid token'));
   }
 }
 
-// Combined auth (API key or JWT)
 export function authenticate(req: Request, res: Response, next: NextFunction) {
-  const hasApiKey = !!req.headers[config.auth.apiKeyHeader.toLowerCase()];
+  const hasApiKey = Boolean(req.headers[config.auth.apiKeyHeader.toLowerCase()]);
   const hasBearer = req.headers.authorization?.startsWith('Bearer ');
 
-  if (hasApiKey) {
-    return apiKeyAuth(req, res, next);
-  } else if (hasBearer) {
-    return jwtAuth(req, res, next);
-  } else {
-    return next(new AuthenticationError('Authentication required (API key or Bearer token)'));
-  }
+  if (hasApiKey) return apiKeyAuth(req, res, next);
+  if (hasBearer) return jwtAuth(req, res, next);
+  return next(new AuthenticationError('Authentication required (API key or Bearer token)'));
 }
 
-/**
- * ECB-grade Governance: Validate Key Role
- * 
- * Enforces that the key used for the request is bound to the required role
- * in the sovereign key hierarchy.
- */
 export function validateKeyRole(requiredRole: KeyRole) {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.auth?.keyId) {
@@ -244,7 +219,7 @@ export function validateKeyRole(requiredRole: KeyRole) {
         logger.warn('AUTH_MIDDLEWARE', 'KEY_VALIDATION_FAILED', {
           keyId: req.auth.keyId.substring(0, 8),
           requiredRole,
-          errorCode: error.code
+          errorCode: error.code,
         });
         return next(new AuthorizationError(error.message));
       }
@@ -253,16 +228,13 @@ export function validateKeyRole(requiredRole: KeyRole) {
   };
 }
 
-// Permission check middleware
 export function requirePermission(...requiredPermissions: string[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.auth) {
-      return next(new AuthenticationError());
-    }
+    if (!req.auth) return next(new AuthenticationError());
 
     const hasWildcard = req.auth.permissions.includes('*');
     const hasPermission = hasWildcard || requiredPermissions.every(
-      perm => req.auth!.permissions.includes(perm)
+      permission => req.auth!.permissions.includes(permission),
     );
 
     if (!hasPermission) {
@@ -274,37 +246,27 @@ export function requirePermission(...requiredPermissions: string[]) {
         },
         path: req.path,
       });
-      return next(new AuthorizationError(
-        `Required permissions: ${requiredPermissions.join(', ')}`
-      ));
+      return next(new AuthorizationError(`Required permissions: ${requiredPermissions.join(', ')}`));
     }
-
     next();
   };
 }
 
-// Role check middleware
 export function requireRole(...requiredRoles: string[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.auth) {
-      return next(new AuthenticationError());
+    if (!req.auth) return next(new AuthenticationError());
+    if (!requiredRoles.some(role => req.auth!.roles.includes(role))) {
+      return next(new AuthorizationError(`Required roles: ${requiredRoles.join(' or ')}`));
     }
-
-    const hasRole = requiredRoles.some(role => req.auth!.roles.includes(role));
-
-    if (!hasRole) {
-      return next(new AuthorizationError(
-        `Required roles: ${requiredRoles.join(' or ')}`
-      ));
-    }
-
     next();
   };
 }
 
-// Generate JWT for authenticated session
 export function generateToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): string {
-  // @ts-expect-error - expiresIn type is compatible at runtime
-  return jwt.sign(payload, config.auth.jwtSecret, { expiresIn: config.auth.jwtExpiresIn });
+  return jwt.sign(payload, config.auth.jwtSecret, {
+    algorithm: 'HS256',
+    expiresIn: config.auth.jwtExpiresIn as jwt.SignOptions['expiresIn'],
+    issuer: config.auth.jwtIssuer,
+    audience: config.auth.jwtAudience,
+  });
 }
-
