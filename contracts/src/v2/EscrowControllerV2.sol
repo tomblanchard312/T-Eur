@@ -160,7 +160,7 @@ contract EscrowControllerV2 {
 
         uint256 amount = escrowCase.amount;
         _closeEscrow(escrowCase, EscrowState.Burned);
-        ledger.controllerBurn(address(this), amount);
+        ledger.controllerBurn(address(this), amount, clientKey);
 
         emit EscrowBurned(escrowId, amount);
     }

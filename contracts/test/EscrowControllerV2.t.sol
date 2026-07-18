@@ -3,9 +3,8 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/v2/EscrowControllerV2.sol";
-import "../src/v2/interfaces/ITokenLedgerV2.sol";
 
-contract MockTokenLedgerV2 is ITokenLedgerV2 {
+contract MockTokenLedgerV2 {
     mapping(address => uint256) private _balances;
     uint256 private _totalSupply;
     address public controller;
@@ -37,7 +36,7 @@ contract MockTokenLedgerV2 is ITokenLedgerV2 {
         _balances[to] += amount;
     }
 
-    function controllerBurn(address from, uint256 amount) external {
+    function controllerBurn(address from, uint256 amount, bytes32) external {
         if (msg.sender != controller) revert Unauthorized();
         if (_balances[from] < amount) revert InsufficientBalance();
         _balances[from] -= amount;
