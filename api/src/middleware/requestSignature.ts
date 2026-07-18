@@ -30,7 +30,7 @@ function signingSecret(): string | undefined {
   return process.env['HMAC_SHARED_SECRET'];
 }
 
-function cleanExpiredNonces(now: number, maxSkew: number): void {
+function cleanExpiredNonces(now: number): void {
   for (const [key, expiresAt] of usedNonces) {
     if (expiresAt <= now) usedNonces.delete(key);
   }
@@ -81,7 +81,7 @@ export function requestSignature(req: Request, _res: Response, next: NextFunctio
     return next(new AuthenticationError('Request signature timestamp is outside the allowed window'));
   }
 
-  cleanExpiredNonces(now, maxSkew);
+  cleanExpiredNonces(now);
   const nonceKey = `${keyId}:${nonce}`;
   if (usedNonces.has(nonceKey)) {
     return next(new AuthenticationError('Request signature nonce has already been used'));
@@ -109,7 +109,7 @@ export function requestSignature(req: Request, _res: Response, next: NextFunctio
     return next(new AuthenticationError('Invalid request signature'));
   }
 
-  usedNonces.set(nonceKey, timestampMs + maxSkew);
+  usedNonces.set(nonceKey, now + maxSkew);
   next();
 }
 
