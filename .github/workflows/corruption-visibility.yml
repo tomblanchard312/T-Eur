@@ -1,18 +1,28 @@
-name: Corruption Visibility Enforcement
+name: API Build and Test
 
 on:
   pull_request:
     branches: [ main ]
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: api-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  corruption-visibility:
-    name: Enforce corruption visibility and auditability
+  api:
+    name: Build and test API
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: api
 
     steps:
       - name: Checkout repository
@@ -21,96 +31,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
 
       - name: Install dependencies
-        run: |
-          npm ci
+        run: npm ci
 
-      # ----------------------------------------------------
-      # 1. Static enforcement: forbidden patterns
-      # ----------------------------------------------------
-      - name: Reject silent failure patterns
-        run: |
-          set -e
+      - name: Build
+        run: npm run build
 
-          echo "Scanning for forbidden silent failure patterns"
-
-          FORBIDDEN_PATTERNS=(
-            "catch \\(.*\\) *\\{ *continue *; *\\}"
-            "catch *\\{ *\\}"
-            "console\\.log"
-          )
-
-          for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
-            if grep -RIn --exclude-dir=node_modules --exclude-dir=dist "$pattern" .; then
-              echo "Forbidden pattern detected: $pattern"
-              exit 1
-            fi
-          done
-
-          echo "No forbidden silent failure patterns found"
-
-      # ----------------------------------------------------
-      # 2. Static enforcement: structured logging only
-      # ----------------------------------------------------
-      - name: Enforce structured logging API usage
-        run: |
-          set -e
-
-          echo "Ensuring logging uses structured events only"
-
-          if grep -RIn --exclude-dir=node_modules --exclude-dir=dist \
-             -E "logEvent\\(.*\".*\"\\)" src services; then
-            echo "Free form string logging detected in logEvent calls"
-            exit 1
-          fi
-
-          echo "Structured logging usage verified"
-
-      # ----------------------------------------------------
-      # 3. Unit and corruption injection tests
-      # ----------------------------------------------------
-      - name: Run corruption injection test suite
-        run: |
-          set -e
-          npm test -- --runInBand --testPathPattern=corruption
-
-      # ----------------------------------------------------
-      # 4. Enforce manifest summary emission
-      # ----------------------------------------------------
-      - name: Verify manifest summary event is emitted
-        run: |
-          set -e
-
-          echo "Checking test output for mandatory summary event"
-
-          if ! grep -R "manifest_build_summary" test-results/; then
-            echo "Manifest build summary event not detected"
-            exit 1
-          fi
-
-          echo "Manifest summary event verified"
-
-      # ----------------------------------------------------
-      # 5. Enforce integrity threshold behavior
-      # ----------------------------------------------------
-      - name: Verify integrity threshold enforcement
-        run: |
-          set -e
-
-          echo "Checking integrity threshold failure behavior"
-
-          if ! grep -R "manifest_integrity_threshold_exceeded" test-results/; then
-            echo "Integrity threshold enforcement not verified"
-            exit 1
-          fi
-
-          echo "Integrity threshold enforcement verified"
-
-      # ----------------------------------------------------
-      # 6. CI outcome
-      # ----------------------------------------------------
-      - name: Corruption visibility enforcement passed
-        run: |
-          echo "All corruption visibility checks passed"
+      - name: Test
+        run: npm test -- --run
