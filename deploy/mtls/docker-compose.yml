@@ -1,0 +1,35 @@
+services:
+  api:
+    build:
+      context: ../../api
+    env_file:
+      - ./.env.local
+    expose:
+      - "3000"
+    networks:
+      mtls_net:
+        ipv4_address: 172.28.0.10
+
+  envoy:
+    image: envoyproxy/envoy:v1.33-latest
+    depends_on:
+      - api
+    env_file:
+      - ./.env.local
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-cluster", "teur-mtls"]
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./pki:/etc/envoy/pki:ro
+    ports:
+      - "8443:8443"
+      - "9901:9901"
+    networks:
+      mtls_net:
+        ipv4_address: 172.28.0.20
+
+networks:
+  mtls_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
