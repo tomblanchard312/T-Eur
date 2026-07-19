@@ -34,6 +34,13 @@ const configSchema = z.object({
     apiKeyHeader: z.string().default('X-API-Key'),
   }),
 
+  mtls: z.object({
+    enabled: z.coerce.boolean().default(false),
+    trustedIngressCidrs: z.array(z.string().min(1)).default([]),
+    ingressToken: z.string().default(''),
+    revokedFingerprints: z.array(z.string().regex(/^[a-fA-F0-9]{64}$/)).default([]),
+  }),
+
   rateLimit: z.object({
     windowMs: z.coerce.number().int().positive().default(60000),
     max: z.coerce.number().int().positive().default(100),
@@ -59,6 +66,10 @@ function structuredConfigError(details: unknown): never {
     // stderr may be unavailable during process teardown.
   }
   throw new Error('Invalid configuration');
+}
+
+function csv(value: string | undefined): string[] {
+  return value?.split(',').map(item => item.trim()).filter(Boolean) ?? [];
 }
 
 function loadConfig() {
@@ -100,6 +111,12 @@ function loadConfig() {
       jwtAudience: required('JWT_AUDIENCE', 'teur-api'),
       apiKeyHeader: process.env['API_KEY_HEADER'],
     },
+    mtls: {
+      enabled: process.env['MTLS_ENABLED'] ?? !permitsLocalDefaults,
+      trustedIngressCidrs: csv(process.env['MTLS_TRUSTED_INGRESS_CIDRS']),
+      ingressToken: process.env['MTLS_INGRESS_TOKEN'] ?? '',
+      revokedFingerprints: csv(process.env['MTLS_REVOKED_FINGERPRINTS']).map(value => value.toLowerCase()),
+    },
     rateLimit: {
       windowMs: process.env['RATE_LIMIT_WINDOW_MS'],
       max: process.env['RATE_LIMIT_MAX'],
@@ -118,6 +135,19 @@ function loadConfig() {
 
   if (!permitsLocalDefaults && result.data.cors.origin === '*') {
     structuredConfigError({ cors: { origin: ['Wildcard CORS is forbidden outside development and test'] } });
+  }
+
+  if (!permitsLocalDefaults && !result.data.mtls.enabled) {
+    structuredConfigError({ mtls: { enabled: ['Institutional mTLS is required in staging and production'] } });
+  }
+
+  if (result.data.mtls.enabled) {
+    if (result.data.mtls.trustedIngressCidrs.length === 0) {
+      structuredConfigError({ mtls: { trustedIngressCidrs: ['At least one trusted ingress CIDR is required'] } });
+    }
+    if (result.data.mtls.ingressToken.length < 32) {
+      structuredConfigError({ mtls: { ingressToken: ['Ingress authentication token must be at least 32 characters'] } });
+    }
   }
 
   return result.data;
