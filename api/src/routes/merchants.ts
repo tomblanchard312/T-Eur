@@ -314,8 +314,11 @@ router.post(
       throw new Error('Transaction amount too small after fees');
     }
 
-    // Process payment (transfer from customer to merchant)
+    // Process payment (transfer from customer to merchant).
+    // The customer wallet is the payer; the operator spends against the
+    // allowance that wallet has granted it.
     const result = await blockchainService.transfer(
+      customerWallet,
       merchant.walletAddress,
       feePreview.netAmount, // Merchant receives net amount
       correlationId,

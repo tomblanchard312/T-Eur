@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { blockchainService } from '../services/blockchain.js';
 import { authenticate, requirePermission, requireRole, validateKeyRole } from '../middleware/auth.js';
-import { validate, asyncHandler } from '../middleware/errors.js';
+import { validate, asyncHandler, ValidationError } from '../middleware/errors.js';
 import { idempotency, strictRateLimiter } from '../middleware/common.js';
 import { logAuditEvent } from '../utils/logger.js';
 import { generateCorrelationId } from '../utils/crypto.js';
@@ -411,10 +411,21 @@ router.post(
     
     const correlationId = generateCorrelationId('transfer');
     const userId = req.auth!.institutionId;
-    
-    // For now, the operator performs the transfer
-    // In production, this would require the sender's signature
-    const result = await blockchainService.transfer(to, BigInt(amount), correlationId, userId);
+
+    // The operator moves funds on the payer's behalf via transferFrom, which
+    // spends against an allowance `from` has granted the operator on-chain.
+    // Checked up front so an unfunded allowance returns a precise 4xx rather
+    // than a bare on-chain revert.
+    const allowance = await blockchainService.allowanceForOperator(from);
+    if (allowance < BigInt(amount)) {
+      throw new ValidationError(
+        'Payer has not authorised this transfer. The sending wallet must grant the ' +
+          'gateway operator an allowance covering the amount before it can be moved.',
+        { required: amount.toString(), allowance: allowance.toString() },
+      );
+    }
+
+    const result = await blockchainService.transfer(from, to, BigInt(amount), correlationId, userId);
 
     logAuditEvent({
       action: 'TOKENS_TRANSFERRED',
@@ -499,7 +510,7 @@ router.post(
     const correlationId = generateCorrelationId('reverse-waterfall');
     const userId = req.auth!.institutionId;
     
-    const result = await blockchainService.executeReverseWaterfall(wallet, BigInt(amount), correlationId, userId);
+    const result = await blockchainService.executeReverseWaterfall(wallet, BigInt(amount), idempotencyKey, correlationId, userId);
 
     logAuditEvent({
       action: 'REVERSE_WATERFALL_EXECUTED',

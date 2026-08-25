@@ -61,6 +61,7 @@ router.post(
       conditionData,
       expiresAt,
       arbiterAddress,
+      idempotencyKey,
       correlationId,
       userId
     );
@@ -231,8 +232,13 @@ router.post(
     // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
     const correlationId = generateCorrelationId('cancel-payment');
     const userId = req.auth!.institutionId;
-    
-    const result = await blockchainService.cancelPayment(paymentId!, correlationId, userId);
+
+    // The contract models cancellation as a refund to the payer and records a
+    // reason with the PaymentRefunded event.
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.length > 0
+      ? req.body.reason.slice(0, 256)
+      : 'Cancelled by payer';
+    const result = await blockchainService.refundPayment(paymentId!, reason, correlationId, userId);
 
     logAuditEvent({
       action: 'PAYMENT_CANCELLED',
@@ -274,7 +280,7 @@ router.post(
     const correlationId = generateCorrelationId('dispute-payment');
     const userId = req.auth!.institutionId;
     
-    const result = await blockchainService.disputePayment(paymentId, correlationId, userId);
+    const result = await blockchainService.disputePayment(paymentId, reason, correlationId, userId);
 
     logAuditEvent({
       action: 'PAYMENT_DISPUTED',

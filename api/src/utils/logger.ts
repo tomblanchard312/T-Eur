@@ -32,6 +32,7 @@ export type LogComponent =
   | 'API_GATEWAY'
   | 'BLOCKCHAIN_SERVICE'
   | 'AUTH_MIDDLEWARE'
+  | 'MTLS'
   | 'AUDIT_SERVICE'
   | 'FRAUD_SERVICE'
   | 'MERCHANT_SERVICE'

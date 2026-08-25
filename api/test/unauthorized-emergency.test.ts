@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { blockchainService } from '../src/services/blockchain.js';
-import { BlockchainError } from '../middleware/errors.js';
+import { BlockchainError } from '../src/middleware/errors.js';
 
 describe('Unauthorized Emergency Action Simulations', () => {
   const testUser = '0x1234567890123456789012345678901234567890';
