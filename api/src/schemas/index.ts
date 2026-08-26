@@ -109,6 +109,8 @@ export const createConditionalPaymentSchema = z.object({
 export const confirmDeliverySchema = z.object({
   paymentId: bytes32,
   proof: bytes32,
+  payer: ethereumAddress,
+  signedTransaction,
 }).strict();
 
 export const releasePaymentSchema = z.object({
