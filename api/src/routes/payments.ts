@@ -1,13 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { blockchainService, ConditionType } from '../services/blockchain.js';
-import { broadcastSignedConditionalPayment } from '../services/signedTransaction.js';
+import { broadcastSignedConditionalPayment, broadcastSignedDeliveryConfirmation } from '../services/signedTransaction.js';
 import { parameters } from '../config/parameters.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
-import { validate, asyncHandler, NotFoundError } from '../middleware/errors.js';
+import { validate, asyncHandler, NotFoundError, ValidationError } from '../middleware/errors.js';
 import { idempotency, strictRateLimiter } from '../middleware/common.js';
 import { logAuditEvent } from '../utils/logger.js';
-import { generateCorrelationId } from '../utils/crypto.js';
 import {
   createConditionalPaymentSchema,
   confirmDeliverySchema,
@@ -43,9 +42,6 @@ router.post(
     const conditionTypeEnum = ConditionType[conditionType as keyof typeof ConditionType];
     const arbiterAddress = arbiter || parameters.default_arbiter_address;
 
-    // ConditionalPayments records msg.sender as payer. To preserve custody the
-    // gateway therefore relays a transaction signed by the payer itself rather
-    // than invoking the contract through the shared operator signer.
     const result = await broadcastSignedConditionalPayment({
       rawTransaction: signedTransaction,
       payer,
@@ -106,30 +102,47 @@ router.get('/:paymentId', requirePermission('read'), validate(getPaymentSchema, 
 
 router.post('/:paymentId/confirm-delivery', requirePermission('conditional_payments'), strictRateLimiter, validate(confirmDeliverySchema), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as z.infer<typeof confirmDeliverySchema>;
-  const { paymentId, proof } = body;
-  const correlationId = generateCorrelationId('confirm-delivery');
-  const userId = req.auth!.institutionId;
-  const result = await blockchainService.confirmDelivery(paymentId, proof, correlationId, userId);
-  logAuditEvent({ action: 'DELIVERY_CONFIRMED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, result: 'success' });
+  const { paymentId, proof, payer, signedTransaction } = body;
+
+  const payment = await blockchainService.getPayment(paymentId);
+  if (payment.payer.toLowerCase() !== payer.toLowerCase()) {
+    throw new ValidationError('Declared payer does not match the payment payer', {
+      paymentId,
+      declaredPayer: payer,
+    });
+  }
+
+  const result = await broadcastSignedDeliveryConfirmation({
+    rawTransaction: signedTransaction,
+    payer: payment.payer,
+    paymentId,
+    proof,
+  });
+
+  logAuditEvent({
+    action: 'DELIVERY_CONFIRMED',
+    actor: req.auth!.institutionId,
+    resource: 'payment',
+    resourceId: paymentId,
+    details: { payer: payment.payer, payerSigned: true },
+    result: 'success',
+  });
   res.json({ success: true, data: { paymentId, action: 'delivery_confirmed', ...result } });
 }));
 
 router.post('/:paymentId/release', requirePermission('conditional_payments'), strictRateLimiter, validate(releasePaymentSchema), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as z.infer<typeof releasePaymentSchema>;
   const { paymentId, proof } = body;
-  const correlationId = generateCorrelationId('release-payment');
-  const userId = req.auth!.institutionId;
-  const result = await blockchainService.releasePayment(paymentId, proof, correlationId, userId);
+  const result = await blockchainService.releasePayment(paymentId, proof, undefined, req.auth!.institutionId);
   logAuditEvent({ action: 'PAYMENT_RELEASED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, result: 'success' });
   res.json({ success: true, data: { paymentId, action: 'released', ...result } });
 }));
 
 router.post('/:paymentId/cancel', requirePermission('conditional_payments'), strictRateLimiter, asyncHandler(async (req: Request, res: Response) => {
   const { paymentId } = req.params;
-  const correlationId = generateCorrelationId('cancel-payment');
   const userId = req.auth!.institutionId;
   const reason = typeof req.body?.reason === 'string' && req.body.reason.length > 0 ? req.body.reason.slice(0, 256) : 'Cancelled by payer';
-  const result = await blockchainService.refundPayment(paymentId!, reason, correlationId, userId);
+  const result = await blockchainService.refundPayment(paymentId!, reason, undefined, userId);
   logAuditEvent({ action: 'PAYMENT_CANCELLED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId!, result: 'success' });
   res.json({ success: true, data: { paymentId, action: 'cancelled', ...result } });
 }));
@@ -137,9 +150,7 @@ router.post('/:paymentId/cancel', requirePermission('conditional_payments'), str
 router.post('/:paymentId/dispute', requirePermission('conditional_payments'), strictRateLimiter, validate(disputePaymentSchema), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as z.infer<typeof disputePaymentSchema>;
   const { paymentId, reason } = body;
-  const correlationId = generateCorrelationId('dispute-payment');
-  const userId = req.auth!.institutionId;
-  const result = await blockchainService.disputePayment(paymentId, reason, correlationId, userId);
+  const result = await blockchainService.disputePayment(paymentId, reason, undefined, req.auth!.institutionId);
   logAuditEvent({ action: 'PAYMENT_DISPUTED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, details: { reason }, result: 'success' });
   res.json({ success: true, data: { paymentId, action: 'disputed', reason, ...result } });
 }));
@@ -147,9 +158,7 @@ router.post('/:paymentId/dispute', requirePermission('conditional_payments'), st
 router.post('/:paymentId/resolve', requirePermission('conditional_payments'), strictRateLimiter, validate(resolveDisputeSchema), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as z.infer<typeof resolveDisputeSchema>;
   const { paymentId, releaseToPayee } = body;
-  const correlationId = generateCorrelationId('resolve-dispute');
-  const userId = req.auth!.institutionId;
-  const result = await blockchainService.resolveDispute(paymentId, releaseToPayee, correlationId, userId);
+  const result = await blockchainService.resolveDispute(paymentId, releaseToPayee, undefined, req.auth!.institutionId);
   logAuditEvent({ action: 'DISPUTE_RESOLVED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, details: { releaseToPayee }, result: 'success' });
   res.json({ success: true, data: { paymentId, action: 'dispute_resolved', releaseToPayee, ...result } });
 }));
