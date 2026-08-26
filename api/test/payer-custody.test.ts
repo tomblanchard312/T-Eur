@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { Interface, Wallet, keccak256, toUtf8Bytes } from 'ethers';
 import { config } from '../src/config/index.js';
 import { ConditionalPaymentsABI, TokenizedEuroABI, ConditionType } from '../src/services/abi.js';
-import { broadcastSignedConditionalPayment, broadcastSignedTransfer } from '../src/services/signedTransaction.js';
-import { createConditionalPaymentSchema, transferSchema } from '../src/schemas/index.js';
+import {
+  broadcastSignedConditionalPayment,
+  broadcastSignedDeliveryConfirmation,
+  broadcastSignedTransfer,
+} from '../src/services/signedTransaction.js';
+import { confirmDeliverySchema, createConditionalPaymentSchema, transferSchema } from '../src/schemas/index.js';
 
 const token = new Interface(TokenizedEuroABI);
 const payments = new Interface(ConditionalPaymentsABI);
@@ -113,5 +117,51 @@ describe('payer custody', () => {
       arbiter,
       idempotencyKey,
     })).rejects.toThrow(/declared payer/i);
+  });
+
+  it('requires payer authorization data for delivery confirmation', () => {
+    const parsed = confirmDeliverySchema.safeParse({
+      paymentId: keccak256(toUtf8Bytes('payment')),
+      proof: keccak256(toUtf8Bytes('proof')),
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects delivery confirmation signed by a different wallet before broadcast', async () => {
+    const payer = Wallet.createRandom();
+    const attacker = Wallet.createRandom();
+    const paymentId = keccak256(toUtf8Bytes('payment-2'));
+    const proof = keccak256(toUtf8Bytes('proof-2'));
+    const rawTransaction = await sign(
+      attacker,
+      config.contracts.conditionalPayments,
+      payments.encodeFunctionData('confirmDelivery', [paymentId, proof]),
+    );
+
+    await expect(broadcastSignedDeliveryConfirmation({
+      rawTransaction,
+      payer: payer.address,
+      paymentId,
+      proof,
+    })).rejects.toThrow(/declared payer/i);
+  });
+
+  it('rejects delivery confirmation with altered proof calldata', async () => {
+    const payer = Wallet.createRandom();
+    const paymentId = keccak256(toUtf8Bytes('payment-3'));
+    const requestedProof = keccak256(toUtf8Bytes('proof-requested'));
+    const signedProof = keccak256(toUtf8Bytes('proof-signed'));
+    const rawTransaction = await sign(
+      payer,
+      config.contracts.conditionalPayments,
+      payments.encodeFunctionData('confirmDelivery', [paymentId, signedProof]),
+    );
+
+    await expect(broadcastSignedDeliveryConfirmation({
+      rawTransaction,
+      payer: payer.address,
+      paymentId,
+      proof: requestedProof,
+    })).rejects.toThrow(/argument 1/i);
   });
 });
