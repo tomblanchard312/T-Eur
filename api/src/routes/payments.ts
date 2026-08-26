@@ -103,6 +103,12 @@ router.get('/:paymentId', requirePermission('read'), validate(getPaymentSchema, 
 router.post('/:paymentId/confirm-delivery', requirePermission('conditional_payments'), strictRateLimiter, validate(confirmDeliverySchema), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as z.infer<typeof confirmDeliverySchema>;
   const { paymentId, proof, payer, signedTransaction } = body;
+  if (req.params.paymentId !== paymentId) {
+    throw new ValidationError('Payment ID in the request body must match the route', {
+      routePaymentId: req.params.paymentId,
+      bodyPaymentId: paymentId,
+    });
+  }
 
   const payment = await blockchainService.getPayment(paymentId);
   if (payment.payer.toLowerCase() !== payer.toLowerCase()) {
