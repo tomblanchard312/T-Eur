@@ -84,16 +84,12 @@ jobs:
       - name: Deploy contracts
         working-directory: contracts
         env:
-          # anvil's first prefunded development account. Local-only, never used
-          # outside this ephemeral CI chain.
           DEPLOYER_PRIVATE_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
         run: |
           forge script script/DeployDigitalEuro.s.sol:DeployLabEnvironment \
             --rpc-url http://127.0.0.1:8545 \
             --broadcast \
             --silent
-          # Pull the deployed addresses out of the broadcast receipt rather than
-          # assuming CREATE ordering.
           RUN_FILE=broadcast/DeployDigitalEuro.s.sol/31337/run-latest.json
           addr() { jq -r --arg n "$1" \
             '[.transactions[] | select(.transactionType=="CREATE" and .contractName==$n)][0].contractAddress' \
@@ -109,24 +105,22 @@ jobs:
         working-directory: api
         run: npm ci
 
-      - name: Run integration tests
-        working-directory: api
-        env:
-          TEUR_INTEGRATION_RPC_URL: http://127.0.0.1:8545
-          TEUR_INTEGRATION_DEPLOYER_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-        run: npm test -- --run test/chain-integration.test.ts
-
-      - name: Fail if integration tests were skipped
+      - name: Run and validate integration tests
         working-directory: api
         env:
           TEUR_INTEGRATION_RPC_URL: http://127.0.0.1:8545
           TEUR_INTEGRATION_DEPLOYER_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
         run: |
-          # describe.skipIf makes a misconfigured job look green. Assert the
-          # suite actually executed.
+          set +e
           OUTPUT=$(npm test -- --run test/chain-integration.test.ts 2>&1)
+          STATUS=$?
+          set -e
+
           echo "$OUTPUT"
+
           if echo "$OUTPUT" | grep -qiE "[1-9][0-9]* skipped|no test files found"; then
             echo "::error::Integration suite did not run - check RPC URL and contract addresses"
             exit 1
           fi
+
+          exit "$STATUS"
