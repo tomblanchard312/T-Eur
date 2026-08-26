@@ -3,6 +3,7 @@ import { z } from 'zod';
 // Common patterns
 const ethereumAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address');
 const bytes32 = z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Invalid bytes32 value');
+const signedTransaction = z.string().regex(/^0x[a-fA-F0-9]+$/, 'Invalid signed transaction').min(4).max(262144);
 const amount = z.coerce.number().int().positive('Amount must be positive');
 
 // ============ Wallet Operations ============
@@ -45,6 +46,7 @@ export const transferSchema = z.object({
   to: ethereumAddress,
   amount: amount,
   idempotencyKey: z.string().uuid(),
+  signedTransaction,
 }).strict();
 
 // ============ Sovereign Monetary Controls ============
@@ -93,6 +95,7 @@ export const executeReverseWaterfallSchema = z.object({
 // ============ Conditional Payments ============
 
 export const createConditionalPaymentSchema = z.object({
+  payer: ethereumAddress,
   payee: ethereumAddress,
   amount: amount,
   conditionType: z.enum(['DELIVERY', 'TIME_LOCK', 'MILESTONE', 'ORACLE', 'MULTI_SIG']),
@@ -100,6 +103,7 @@ export const createConditionalPaymentSchema = z.object({
   expiresAt: z.coerce.number().int().positive(),
   arbiter: ethereumAddress.optional(),
   idempotencyKey: z.string().uuid(),
+  signedTransaction,
 }).strict();
 
 export const confirmDeliverySchema = z.object({
