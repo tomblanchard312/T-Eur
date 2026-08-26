@@ -1,12 +1,9 @@
 import { z } from 'zod';
 
-// Common patterns
 const ethereumAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address');
 const bytes32 = z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Invalid bytes32 value');
 const signedTransaction = z.string().regex(/^0x[a-fA-F0-9]+$/, 'Invalid signed transaction').min(4).max(262144);
 const amount = z.coerce.number().int().positive('Amount must be positive');
-
-// ============ Wallet Operations ============
 
 export const registerWalletSchema = z.object({
   wallet: ethereumAddress,
@@ -14,90 +11,34 @@ export const registerWalletSchema = z.object({
   linkedBankAccount: ethereumAddress.optional(),
   kycHash: bytes32,
   idempotencyKey: z.string().uuid(),
-}).strict(); // OWASP: Injection Risks - Reject unknown fields
-
-export const deactivateWalletSchema = z.object({
-  wallet: ethereumAddress,
-  reason: z.string().min(10).max(500),
 }).strict();
 
-export const updateLinkedBankSchema = z.object({
-  wallet: ethereumAddress,
-  newBankAccount: ethereumAddress,
-}).strict();
-
-// ============ Token Operations ============
+export const deactivateWalletSchema = z.object({ wallet: ethereumAddress, reason: z.string().min(10).max(500) }).strict();
+export const updateLinkedBankSchema = z.object({ wallet: ethereumAddress, newBankAccount: ethereumAddress }).strict();
 
 export const mintSchema = z.object({
   to: ethereumAddress,
   amount: amount.describe('Amount in euro cents (e.g., 100000 = €1,000.00)'),
-  justification: z.string().min(1).max(256).describe('Legal justification for minting'),
+  justification: z.string().min(1).max(256),
   idempotencyKey: z.string().uuid(),
 }).strict();
+export const burnSchema = z.object({ from: ethereumAddress, amount, idempotencyKey: z.string().uuid() }).strict();
+export const transferSchema = z.object({ from: ethereumAddress, to: ethereumAddress, amount, idempotencyKey: z.string().uuid(), signedTransaction }).strict();
 
-export const burnSchema = z.object({
-  from: ethereumAddress,
-  amount: amount,
-  idempotencyKey: z.string().uuid(),
-}).strict();
+export const freezeAccountSchema = z.object({ account: ethereumAddress, reason: z.string().min(1).max(256) }).strict();
+export const unfreezeAccountSchema = z.object({ account: ethereumAddress }).strict();
+export const escrowFundsSchema = z.object({ account: ethereumAddress, amount, legalBasis: z.string().min(1).max(256), expiry: z.number().int().min(0) }).strict();
+export const releaseEscrowedFundsSchema = z.object({ account: ethereumAddress, to: ethereumAddress }).strict();
+export const burnEscrowedFundsSchema = z.object({ account: ethereumAddress }).strict();
+export const accountParamSchema = z.object({ account: ethereumAddress }).strict();
 
-export const transferSchema = z.object({
-  from: ethereumAddress,
-  to: ethereumAddress,
-  amount: amount,
-  idempotencyKey: z.string().uuid(),
-  signedTransaction,
-}).strict();
-
-// ============ Sovereign Monetary Controls ============
-
-export const freezeAccountSchema = z.object({
-  account: ethereumAddress,
-  reason: z.string().min(1).max(256).describe('Reason for freezing the account'),
-}).strict();
-
-export const unfreezeAccountSchema = z.object({
-  account: ethereumAddress,
-}).strict();
-
-export const escrowFundsSchema = z.object({
-  account: ethereumAddress,
-  amount: amount,
-  legalBasis: z.string().min(1).max(256).describe('Legal basis for escrow'),
-  expiry: z.number().int().min(0).describe('Expiry timestamp in seconds'),
-}).strict();
-
-export const releaseEscrowedFundsSchema = z.object({
-  account: ethereumAddress,
-  to: ethereumAddress,
-}).strict();
-
-export const burnEscrowedFundsSchema = z.object({
-  account: ethereumAddress,
-}).strict();
-
-export const accountParamSchema = z.object({
-  account: ethereumAddress,
-}).strict();
-
-// ============ Waterfall Operations ============
-
-export const executeWaterfallSchema = z.object({
-  wallet: ethereumAddress,
-}).strict();
-
-export const executeReverseWaterfallSchema = z.object({
-  wallet: ethereumAddress,
-  amount: amount,
-  idempotencyKey: z.string().uuid(),
-}).strict();
-
-// ============ Conditional Payments ============
+export const executeWaterfallSchema = z.object({ wallet: ethereumAddress }).strict();
+export const executeReverseWaterfallSchema = z.object({ wallet: ethereumAddress, amount, idempotencyKey: z.string().uuid() }).strict();
 
 export const createConditionalPaymentSchema = z.object({
   payer: ethereumAddress,
   payee: ethereumAddress,
-  amount: amount,
+  amount,
   conditionType: z.enum(['DELIVERY', 'TIME_LOCK', 'MILESTONE', 'ORACLE', 'MULTI_SIG']),
   conditionData: bytes32,
   expiresAt: z.coerce.number().int().positive(),
@@ -106,48 +47,17 @@ export const createConditionalPaymentSchema = z.object({
   signedTransaction,
 }).strict();
 
-export const confirmDeliverySchema = z.object({
-  paymentId: bytes32,
-  proof: bytes32,
-  payer: ethereumAddress,
-  signedTransaction,
-}).strict();
+export const confirmDeliverySchema = z.object({ paymentId: bytes32, proof: bytes32, payer: ethereumAddress, signedTransaction }).strict();
+export const releasePaymentSchema = z.object({ paymentId: bytes32, proof: bytes32 }).strict();
+export const refundPaymentSchema = z.object({ paymentId: bytes32, reason: z.string().min(1).max(256), payer: ethereumAddress, signedTransaction }).strict();
+export const disputePaymentSchema = z.object({ paymentId: bytes32, reason: z.string().min(10).max(1000), actor: ethereumAddress, signedTransaction }).strict();
+export const resolveDisputeSchema = z.object({ paymentId: bytes32, releaseToPayee: z.boolean(), arbiter: ethereumAddress, signedTransaction }).strict();
 
-export const releasePaymentSchema = z.object({
-  paymentId: bytes32,
-  proof: bytes32,
-}).strict();
+export const getBalanceSchema = z.object({ address: ethereumAddress }).strict();
+export const getWalletInfoSchema = z.object({ address: ethereumAddress }).strict();
+export const getPaymentSchema = z.object({ paymentId: bytes32 });
+export const paginationSchema = z.object({ page: z.coerce.number().int().positive().default(1), limit: z.coerce.number().int().min(1).max(100).default(20) });
 
-export const disputePaymentSchema = z.object({
-  paymentId: bytes32,
-  reason: z.string().min(10).max(1000),
-}).strict();
-
-export const resolveDisputeSchema = z.object({
-  paymentId: bytes32,
-  releaseToPayee: z.boolean(),
-}).strict();
-
-// ============ Query Schemas ============
-
-export const getBalanceSchema = z.object({
-  address: ethereumAddress,
-}).strict();
-
-export const getWalletInfoSchema = z.object({
-  address: ethereumAddress,
-}).strict();
-
-export const getPaymentSchema = z.object({
-  paymentId: bytes32,
-});
-
-export const paginationSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-});
-
-// Export types
 export type RegisterWalletRequest = z.infer<typeof registerWalletSchema>;
 export type MintRequest = z.infer<typeof mintSchema>;
 export type BurnRequest = z.infer<typeof burnSchema>;
