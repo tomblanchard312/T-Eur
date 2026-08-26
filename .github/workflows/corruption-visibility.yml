@@ -47,8 +47,12 @@ jobs:
         run: npm run lint
       - name: Build
         run: npm run build
-      - name: Test
-        run: npm test -- --run
+      - name: Test unit and API suites
+        run: >-
+          npm test -- --run
+          --exclude test/chain-integration.test.ts
+          --exclude test/emergency.test.ts
+          --exclude test/availability.test.ts
 
   integration:
     name: Gateway against deployed contracts
