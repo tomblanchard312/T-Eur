@@ -13,19 +13,6 @@ import { config } from '../config/index.js';
 
 const { combine, timestamp, json } = winston.format;
 
-/**
- * OWASP & Regulatory Compliance: Structured Logging
- * 
- * This logger enforces deterministic JSON output for all logs.
- * It prevents logging of PII, PHI, secrets, and raw payloads.
- * 
- * Requirements:
- * - No console.log
- * - No free-form strings
- * - No implicit string interpolation
- * - Deterministic JSON schema
- */
-
 export type LogSeverity = 'error' | 'warn' | 'info' | 'debug';
 
 export type LogComponent = 
@@ -72,15 +59,12 @@ export type LogEvent =
   | 'HOLDING_LIMIT_CHECK_FAILED'
   | 'AUDIT_EVENT';
 
-/**
- * Canonical Audit Actions
- * Required for deterministic audit trails and regulatory reporting
- */
 export type AuditAction =
   | 'WALLET_REGISTERED'
   | 'WALLET_DEACTIVATED'
   | 'WALLET_REACTIVATED'
   | 'LINKED_BANK_UPDATED'
+  | 'TOKENS_MINT_REQUESTED'
   | 'TOKENS_MINTED'
   | 'TOKENS_BURNED'
   | 'TOKENS_TRANSFERRED'
@@ -147,12 +131,8 @@ export interface LogContext {
   [key: string]: string | number | boolean | undefined | any;
 }
 
-const prodFormat = combine(
-  timestamp(),
-  json()
-);
+const prodFormat = combine(timestamp(), json());
 
-// Base winston logger
 const baseLogger = winston.createLogger({
   level: config.logLevel,
   format: prodFormat,
@@ -166,31 +146,16 @@ const baseLogger = winston.createLogger({
   ],
 });
 
-// Audit logger for regulatory compliance (GDPR, ECB requirements)
 const auditBaseLogger = winston.createLogger({
   level: 'info',
   format: prodFormat,
   defaultMeta: { type: 'audit' },
-  transports: [
-    new winston.transports.File({ filename: 'logs/audit.log' }),
-  ],
+  transports: [new winston.transports.File({ filename: 'logs/audit.log' })],
 });
 
-/**
- * Secure structured logging helper
- * Enforces schema and sanitization
- */
 export const logger = {
-  log(
-    severity: LogSeverity,
-    component: LogComponent,
-    event: LogEvent,
-    context: LogContext = {}
-  ) {
-    // OWASP: Sensitive Data Exposure - Sanitize context
+  log(severity: LogSeverity, component: LogComponent, event: LogEvent, context: LogContext = {}) {
     const sanitizedContext = { ...context };
-    
-    // Remove any potential secrets or PII if they accidentally leaked in
     delete sanitizedContext.password;
     delete sanitizedContext.token;
     delete sanitizedContext.apiKey;
@@ -203,34 +168,14 @@ export const logger = {
     delete sanitizedContext.ssn;
     delete sanitizedContext.taxId;
 
-    baseLogger.log(severity, event, {
-      component,
-      event,
-      ...sanitizedContext,
-    });
+    baseLogger.log(severity, event, { component, event, ...sanitizedContext });
   },
-
-  error(component: LogComponent, event: LogEvent, context?: LogContext) {
-    this.log('error', component, event, context);
-  },
-
-  warn(component: LogComponent, event: LogEvent, context?: LogContext) {
-    this.log('warn', component, event, context);
-  },
-
-  info(component: LogComponent, event: LogEvent, context?: LogContext) {
-    this.log('info', component, event, context);
-  },
-
-  debug(component: LogComponent, event: LogEvent, context?: LogContext) {
-    this.log('debug', component, event, context);
-  }
+  error(component: LogComponent, event: LogEvent, context?: LogContext) { this.log('error', component, event, context); },
+  warn(component: LogComponent, event: LogEvent, context?: LogContext) { this.log('warn', component, event, context); },
+  info(component: LogComponent, event: LogEvent, context?: LogContext) { this.log('info', component, event, context); },
+  debug(component: LogComponent, event: LogEvent, context?: LogContext) { this.log('debug', component, event, context); }
 };
 
-/**
- * Audit logging for critical financial and governance events
- * Required by ECB Digital Euro scheme rulebook
- */
 export function logAuditEvent(
   event: {
     action: AuditAction;
@@ -243,10 +188,18 @@ export function logAuditEvent(
   },
   extra?: LogContext
 ) {
+  // Mint justification is recorded by BlockchainService before submission. It
+  // is an initiation record, not evidence that monetary state changed. The
+  // route emits TOKENS_MINTED only after executeTransaction has a successful
+  // confirmed receipt. This guard prevents an early success event from being
+  // persisted even if a caller accidentally reuses the old action name.
+  const normalizedEvent = event.action === 'TOKENS_MINTED' && typeof event.details?.justification === 'string'
+    ? { ...event, action: 'TOKENS_MINT_REQUESTED' as const }
+    : event;
+
   auditBaseLogger.info('AUDIT_EVENT', {
-    ...event,
+    ...normalizedEvent,
     ...(extra || {}),
     timestamp: new Date().toISOString(),
   });
 }
-
