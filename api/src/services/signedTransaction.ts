@@ -169,3 +169,19 @@ export async function broadcastSignedConditionalPayment(params: {
     paymentId: event.args.paymentId as string,
   };
 }
+
+export async function broadcastSignedDeliveryConfirmation(params: {
+  rawTransaction: string;
+  payer: string;
+  paymentId: string;
+  proof: string;
+}) {
+  return broadcastValidated(
+    params.rawTransaction,
+    config.contracts.conditionalPayments,
+    conditionalPaymentsInterface,
+    'confirmDelivery',
+    [params.paymentId, params.proof],
+    params.payer,
+  );
+}
