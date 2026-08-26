@@ -1,4 +1,4 @@
-import { Interface, JsonRpcProvider, Transaction, getAddress } from 'ethers';
+import { Interface, JsonRpcProvider, Transaction, getAddress, keccak256, toUtf8Bytes } from 'ethers';
 import { config } from '../config/index.js';
 import { BlockchainError, ValidationError } from '../middleware/errors.js';
 import { ConditionalPaymentsABI, TokenizedEuroABI } from './abi.js';
@@ -6,6 +6,10 @@ import { ConditionalPaymentsABI, TokenizedEuroABI } from './abi.js';
 const tokenInterface = new Interface(TokenizedEuroABI);
 const conditionalPaymentsInterface = new Interface(ConditionalPaymentsABI);
 const provider = new JsonRpcProvider(config.blockchain.rpcUrl);
+
+function validation(message: string, details: Record<string, unknown> = {}): ValidationError {
+  return new ValidationError(message, details);
+}
 
 function normalize(address: string): string {
   return getAddress(address).toLowerCase();
@@ -16,17 +20,20 @@ function assertSignedTransaction(rawTransaction: string): Transaction {
   try {
     tx = Transaction.from(rawTransaction);
   } catch {
-    throw new ValidationError('Invalid signed transaction');
+    throw validation('Invalid signed transaction');
   }
 
   if (!tx.signature || !tx.from) {
-    throw new ValidationError('Transaction must be signed by the payer');
+    throw validation('Transaction must be signed by the payer');
   }
   if (tx.chainId !== BigInt(config.blockchain.chainId)) {
-    throw new ValidationError('Signed transaction targets the wrong chain');
+    throw validation('Signed transaction targets the wrong chain', {
+      expectedChainId: config.blockchain.chainId,
+      actualChainId: tx.chainId.toString(),
+    });
   }
   if (tx.value !== 0n) {
-    throw new ValidationError('Payer transaction must not transfer native currency');
+    throw validation('Payer transaction must not transfer native currency');
   }
   return tx;
 }
@@ -51,27 +58,27 @@ async function broadcastValidated(
   const tx = assertSignedTransaction(rawTransaction);
 
   if (!tx.to || normalize(tx.to) !== normalize(expectedContract)) {
-    throw new ValidationError('Signed transaction targets an unexpected contract');
+    throw validation('Signed transaction targets an unexpected contract');
   }
   if (normalize(tx.from!) !== normalize(expectedPayer)) {
-    throw new ValidationError('Signed transaction was not signed by the declared payer');
+    throw validation('Signed transaction was not signed by the declared payer');
   }
 
   let parsed;
   try {
     parsed = iface.parseTransaction({ data: tx.data, value: tx.value });
   } catch {
-    throw new ValidationError('Signed transaction calldata is invalid');
+    throw validation('Signed transaction calldata is invalid');
   }
   if (!parsed || parsed.name !== expectedFunction) {
-    throw new ValidationError(`Signed transaction must call ${expectedFunction}`);
+    throw validation(`Signed transaction must call ${expectedFunction}`);
   }
   if (parsed.args.length !== expectedArgs.length) {
-    throw new ValidationError('Signed transaction argument count does not match the request');
+    throw validation('Signed transaction argument count does not match the request');
   }
   for (let i = 0; i < expectedArgs.length; i += 1) {
     if (!equalArg(parsed.args[i], expectedArgs[i])) {
-      throw new ValidationError(`Signed transaction argument ${i} does not match the request`);
+      throw validation(`Signed transaction argument ${i} does not match the request`, { argumentIndex: i });
     }
   }
 
@@ -124,7 +131,7 @@ export async function broadcastSignedConditionalPayment(params: {
 }) {
   const idempotencyBytes32 = /^0x[a-fA-F0-9]{64}$/.test(params.idempotencyKey)
     ? params.idempotencyKey
-    : (await import('ethers')).keccak256((await import('ethers')).toUtf8Bytes(params.idempotencyKey));
+    : keccak256(toUtf8Bytes(params.idempotencyKey));
 
   const result = await broadcastValidated(
     params.rawTransaction,
