@@ -1,344 +1,134 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { blockchainService, ConditionType } from '../services/blockchain.js';
+import {
+  broadcastSignedConditionalPayment,
+  broadcastSignedDeliveryConfirmation,
+  broadcastSignedPaymentRefund,
+  broadcastSignedPaymentDispute,
+  broadcastSignedDisputeResolution,
+} from '../services/signedTransaction.js';
 import { parameters } from '../config/parameters.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
-import { validate, asyncHandler, NotFoundError } from '../middleware/errors.js';
+import { validate, asyncHandler, NotFoundError, ValidationError } from '../middleware/errors.js';
 import { idempotency, strictRateLimiter } from '../middleware/common.js';
 import { logAuditEvent } from '../utils/logger.js';
-import { generateCorrelationId } from '../utils/crypto.js';
 import {
   createConditionalPaymentSchema,
   confirmDeliverySchema,
   releasePaymentSchema,
+  refundPaymentSchema,
   disputePaymentSchema,
   resolveDisputeSchema,
   getPaymentSchema,
 } from '../schemas/index.js';
 
 const router = Router();
-
-// All routes require authentication
 router.use(authenticate);
 
-/**
- * @openapi
- * /payments:
- *   post:
- *     summary: Create a conditional payment (escrow)
- *     tags: [Conditional Payments]
- */
-router.post(
-  '/',
-  requirePermission('conditional_payments'),
-  strictRateLimiter,
-  idempotency,
-  validate(createConditionalPaymentSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    // OWASP: Insecure Deserialization - Never trust JSON structure or types
-    // Use validated data from req.body
-    const body = req.body as z.infer<typeof createConditionalPaymentSchema>;
-    const { 
-      payee, 
-      amount, 
-      conditionType, 
-      conditionData, 
-      expiresAt, 
-      arbiter,
-      idempotencyKey 
-    } = body;
-    
-    const conditionTypeEnum = ConditionType[conditionType as keyof typeof ConditionType];
-    const arbiterAddress = arbiter || parameters.default_arbiter_address;
-
-    const correlationId = generateCorrelationId('payment');
-    const userId = req.auth!.institutionId;
-
-    const result = await blockchainService.createConditionalPayment(
-      payee,
-      BigInt(amount),
-      conditionTypeEnum,
-      conditionData,
-      expiresAt,
-      arbiterAddress,
-      correlationId,
-      userId
-    );
-
-    logAuditEvent({
-      action: 'CONDITIONAL_PAYMENT_CREATED',
-      actor: req.auth!.institutionId,
-      resource: 'payment',
-      resourceId: result.paymentId,
-      details: { 
-        payee, 
-        amount, 
-        amountFormatted: `€${(amount / 100).toFixed(2)}`,
-        conditionType,
-        expiresAt: new Date(expiresAt * 1000).toISOString(),
-        idempotencyKey,
-      },
-      result: 'success',
+function assertRoutePaymentId(routeId: string | undefined, bodyId: string): void {
+  if (routeId !== bodyId) {
+    throw new ValidationError('Payment ID in the request body must match the route', {
+      routePaymentId: routeId,
+      bodyPaymentId: bodyId,
     });
+  }
+}
 
-    res.status(201).json({
-      success: true,
-      data: {
-        paymentId: result.paymentId,
-        payee,
-        amount,
-        amountFormatted: `€${(amount / 100).toFixed(2)}`,
-        conditionType,
-        expiresAt: new Date(expiresAt * 1000).toISOString(),
-        arbiter: arbiterAddress,
-        txHash: result.txHash,
-        blockNumber: result.blockNumber,
-      },
-    });
-  })
-);
+router.post('/', requirePermission('conditional_payments'), strictRateLimiter, idempotency, validate(createConditionalPaymentSchema), asyncHandler(async (req: Request, res: Response) => {
+  const body = req.body as z.infer<typeof createConditionalPaymentSchema>;
+  const { payer, payee, amount, conditionType, conditionData, expiresAt, arbiter, idempotencyKey, signedTransaction } = body;
+  const conditionTypeEnum = ConditionType[conditionType as keyof typeof ConditionType];
+  const arbiterAddress = arbiter || parameters.default_arbiter_address;
 
-/**
- * @openapi
- * /payments/{paymentId}:
- *   get:
- *     summary: Get payment details
- *     tags: [Conditional Payments]
- */
-router.get(
-  '/:paymentId',
-  requirePermission('read'),
-  validate(getPaymentSchema, 'params'),
-  asyncHandler(async (req: Request, res: Response) => {
-    const { paymentId } = req.params;
-    
-    try {
-      const payment = await blockchainService.getPayment(paymentId!);
-      
-      res.json({
-        success: true,
-        data: {
-          paymentId,
-          ...payment,
-          amountFormatted: `€${(Number(payment.amount) / 100).toFixed(2)}`,
-        },
-      });
-    } catch {
-      throw new NotFoundError('Payment', paymentId);
-    }
-  })
-);
+  const result = await broadcastSignedConditionalPayment({
+    rawTransaction: signedTransaction,
+    payer,
+    payee,
+    amount: BigInt(amount),
+    conditionType: conditionTypeEnum,
+    conditionData,
+    expiresAt,
+    arbiter: arbiterAddress,
+    idempotencyKey,
+  });
 
-/**
- * @openapi
- * /payments/{paymentId}/confirm-delivery:
- *   post:
- *     summary: Confirm delivery for a conditional payment
- *     tags: [Conditional Payments]
- */
-router.post(
-  '/:paymentId/confirm-delivery',
-  requirePermission('conditional_payments'),
-  strictRateLimiter,
-  validate(confirmDeliverySchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    // OWASP: Insecure Deserialization - Never trust JSON structure or types
-    const body = req.body as z.infer<typeof confirmDeliverySchema>;
-    const { paymentId, proof } = body;
-    
-    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
-    const correlationId = generateCorrelationId('confirm-delivery');
-    const userId = req.auth!.institutionId;
-    
-    const result = await blockchainService.confirmDelivery(paymentId, proof, correlationId, userId);
+  logAuditEvent({
+    action: 'CONDITIONAL_PAYMENT_CREATED', actor: req.auth!.institutionId, resource: 'payment', resourceId: result.paymentId,
+    details: { payer, payee, amount, conditionType, expiresAt, idempotencyKey, payerSigned: true }, result: 'success',
+  });
+  res.status(201).json({ success: true, data: { paymentId: result.paymentId, payer, payee, amount, conditionType, expiresAt, arbiter: arbiterAddress, txHash: result.txHash, blockNumber: result.blockNumber } });
+}));
 
-    logAuditEvent({
-      action: 'DELIVERY_CONFIRMED',
-      actor: req.auth!.institutionId,
-      resource: 'payment',
-      resourceId: paymentId,
-      result: 'success',
-    });
+router.get('/:paymentId', requirePermission('read'), validate(getPaymentSchema, 'params'), asyncHandler(async (req: Request, res: Response) => {
+  const { paymentId } = req.params;
+  try {
+    const payment = await blockchainService.getPayment(paymentId!);
+    res.json({ success: true, data: { paymentId, ...payment, amountFormatted: `€${(Number(payment.amount) / 100).toFixed(2)}` } });
+  } catch {
+    throw new NotFoundError('Payment', paymentId);
+  }
+}));
 
-    res.json({
-      success: true,
-      data: {
-        paymentId,
-        action: 'delivery_confirmed',
-        ...result,
-      },
-    });
-  })
-);
+router.post('/:paymentId/confirm-delivery', requirePermission('conditional_payments'), strictRateLimiter, validate(confirmDeliverySchema), asyncHandler(async (req: Request, res: Response) => {
+  const { paymentId, proof, payer, signedTransaction } = req.body as z.infer<typeof confirmDeliverySchema>;
+  assertRoutePaymentId(req.params.paymentId, paymentId);
+  const payment = await blockchainService.getPayment(paymentId);
+  if (payment.payer.toLowerCase() !== payer.toLowerCase()) {
+    throw new ValidationError('Declared payer does not match the payment payer', { paymentId, declaredPayer: payer });
+  }
+  const result = await broadcastSignedDeliveryConfirmation({ rawTransaction: signedTransaction, payer: payment.payer, paymentId, proof });
+  logAuditEvent({ action: 'DELIVERY_CONFIRMED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, details: { payer: payment.payer, payerSigned: true }, result: 'success' });
+  res.json({ success: true, data: { paymentId, action: 'delivery_confirmed', ...result } });
+}));
 
-/**
- * @openapi
- * /payments/{paymentId}/release:
- *   post:
- *     summary: Release funds from conditional payment
- *     tags: [Conditional Payments]
- */
-router.post(
-  '/:paymentId/release',
-  requirePermission('conditional_payments'),
-  strictRateLimiter,
-  validate(releasePaymentSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    // OWASP: Insecure Deserialization - Never trust JSON structure or types
-    const body = req.body as z.infer<typeof releasePaymentSchema>;
-    const { paymentId, proof } = body;
-    
-    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
-    const correlationId = generateCorrelationId('release-payment');
-    const userId = req.auth!.institutionId;
-    
-    const result = await blockchainService.releasePayment(paymentId, proof, correlationId, userId);
+router.post('/:paymentId/release', requirePermission('conditional_payments'), strictRateLimiter, validate(releasePaymentSchema), asyncHandler(async (req: Request, res: Response) => {
+  const { paymentId, proof } = req.body as z.infer<typeof releasePaymentSchema>;
+  assertRoutePaymentId(req.params.paymentId, paymentId);
+  const payment = await blockchainService.getPayment(paymentId);
+  if (payment.conditionType !== ConditionType.TIME_LOCK) {
+    throw new ValidationError('Generic release is only permitted for time-locked payments; use the authorized condition-specific flow', { paymentId });
+  }
+  const result = await blockchainService.releasePayment(paymentId, proof, undefined, req.auth!.institutionId);
+  logAuditEvent({ action: 'PAYMENT_RELEASED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, result: 'success' });
+  res.json({ success: true, data: { paymentId, action: 'released', ...result } });
+}));
 
-    logAuditEvent({
-      action: 'PAYMENT_RELEASED',
-      actor: req.auth!.institutionId,
-      resource: 'payment',
-      resourceId: paymentId,
-      result: 'success',
-    });
+router.post('/:paymentId/cancel', requirePermission('conditional_payments'), strictRateLimiter, validate(refundPaymentSchema), asyncHandler(async (req: Request, res: Response) => {
+  const { paymentId, reason, payer, signedTransaction } = req.body as z.infer<typeof refundPaymentSchema>;
+  assertRoutePaymentId(req.params.paymentId, paymentId);
+  const payment = await blockchainService.getPayment(paymentId);
+  if (payment.payer.toLowerCase() !== payer.toLowerCase()) {
+    throw new ValidationError('Declared payer does not match the payment payer', { paymentId, declaredPayer: payer });
+  }
+  const result = await broadcastSignedPaymentRefund({ rawTransaction: signedTransaction, payer: payment.payer, paymentId, reason });
+  logAuditEvent({ action: 'PAYMENT_CANCELLED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, details: { payerSigned: true }, result: 'success' });
+  res.json({ success: true, data: { paymentId, action: 'cancelled', ...result } });
+}));
 
-    res.json({
-      success: true,
-      data: {
-        paymentId,
-        action: 'released',
-        ...result,
-      },
-    });
-  })
-);
+router.post('/:paymentId/dispute', requirePermission('conditional_payments'), strictRateLimiter, validate(disputePaymentSchema), asyncHandler(async (req: Request, res: Response) => {
+  const { paymentId, reason, actor, signedTransaction } = req.body as z.infer<typeof disputePaymentSchema>;
+  assertRoutePaymentId(req.params.paymentId, paymentId);
+  const payment = await blockchainService.getPayment(paymentId);
+  const normalizedActor = actor.toLowerCase();
+  if (normalizedActor !== payment.payer.toLowerCase() && normalizedActor !== payment.payee.toLowerCase()) {
+    throw new ValidationError('Dispute actor must be the payment payer or payee', { paymentId, actor });
+  }
+  const result = await broadcastSignedPaymentDispute({ rawTransaction: signedTransaction, actor, paymentId, reason });
+  logAuditEvent({ action: 'PAYMENT_DISPUTED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, details: { reason, signedActor: actor }, result: 'success' });
+  res.json({ success: true, data: { paymentId, action: 'disputed', reason, ...result } });
+}));
 
-/**
- * @openapi
- * /payments/{paymentId}/cancel:
- *   post:
- *     summary: Cancel a conditional payment
- *     tags: [Conditional Payments]
- */
-router.post(
-  '/:paymentId/cancel',
-  requirePermission('conditional_payments'),
-  strictRateLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    // OWASP: Injection - Use strictly validated path parameters
-    const { paymentId } = req.params;
-    
-    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
-    const correlationId = generateCorrelationId('cancel-payment');
-    const userId = req.auth!.institutionId;
-    
-    const result = await blockchainService.cancelPayment(paymentId!, correlationId, userId);
-
-    logAuditEvent({
-      action: 'PAYMENT_CANCELLED',
-      actor: req.auth!.institutionId,
-      resource: 'payment',
-      resourceId: paymentId!,
-      result: 'success',
-    });
-
-    res.json({
-      success: true,
-      data: {
-        paymentId,
-        action: 'cancelled',
-        ...result,
-      },
-    });
-  })
-);
-
-/**
- * @openapi
- * /payments/{paymentId}/dispute:
- *   post:
- *     summary: Dispute a conditional payment
- *     tags: [Conditional Payments]
- */
-router.post(
-  '/:paymentId/dispute',
-  requirePermission('conditional_payments'),
-  strictRateLimiter,
-  validate(disputePaymentSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    // OWASP: Insecure Deserialization - Never trust JSON structure or types
-    const body = req.body as z.infer<typeof disputePaymentSchema>;
-    const { paymentId, reason } = body;
-    
-    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
-    const correlationId = generateCorrelationId('dispute-payment');
-    const userId = req.auth!.institutionId;
-    
-    const result = await blockchainService.disputePayment(paymentId, correlationId, userId);
-
-    logAuditEvent({
-      action: 'PAYMENT_DISPUTED',
-      actor: req.auth!.institutionId,
-      resource: 'payment',
-      resourceId: paymentId,
-      details: { reason },
-      result: 'success',
-    });
-
-    res.json({
-      success: true,
-      data: {
-        paymentId,
-        action: 'disputed',
-        reason,
-        ...result,
-      },
-    });
-  })
-);
-
-/**
- * @openapi
- * /payments/{paymentId}/resolve:
- *   post:
- *     summary: Resolve a disputed payment (arbiter only)
- *     tags: [Conditional Payments]
- */
-router.post(
-  '/:paymentId/resolve',
-  requirePermission('conditional_payments'),
-  strictRateLimiter,
-  validate(resolveDisputeSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    // OWASP: Insecure Deserialization - Never trust JSON structure or types
-    const body = req.body as z.infer<typeof resolveDisputeSchema>;
-    const { paymentId, releaseToPayee } = body;
-    
-    // OWASP: Broken Authentication - Use cryptographically secure correlation IDs
-    const correlationId = generateCorrelationId('resolve-dispute');
-    const userId = req.auth!.institutionId;
-    
-    const result = await blockchainService.resolveDispute(paymentId, releaseToPayee, correlationId, userId);
-
-    logAuditEvent({
-      action: 'DISPUTE_RESOLVED',
-      actor: req.auth!.institutionId,
-      resource: 'payment',
-      resourceId: paymentId,
-      details: { releaseToPayee },
-      result: 'success',
-    });
-
-    res.json({
-      success: true,
-      data: {
-        paymentId,
-        action: 'dispute_resolved',
-        releaseToPayee,
-        ...result,
-      },
-    });
-  })
-);
+router.post('/:paymentId/resolve', requirePermission('conditional_payments'), strictRateLimiter, validate(resolveDisputeSchema), asyncHandler(async (req: Request, res: Response) => {
+  const { paymentId, releaseToPayee, arbiter, signedTransaction } = req.body as z.infer<typeof resolveDisputeSchema>;
+  assertRoutePaymentId(req.params.paymentId, paymentId);
+  const payment = await blockchainService.getPayment(paymentId);
+  if (payment.arbiter.toLowerCase() !== arbiter.toLowerCase()) {
+    throw new ValidationError('Declared arbiter does not match the payment arbiter', { paymentId, arbiter });
+  }
+  const result = await broadcastSignedDisputeResolution({ rawTransaction: signedTransaction, arbiter: payment.arbiter, paymentId, releaseToPayee });
+  logAuditEvent({ action: 'DISPUTE_RESOLVED', actor: req.auth!.institutionId, resource: 'payment', resourceId: paymentId, details: { releaseToPayee, arbiterSigned: true }, result: 'success' });
+  res.json({ success: true, data: { paymentId, action: 'dispute_resolved', releaseToPayee, ...result } });
+}));
 
 export default router;

@@ -115,9 +115,3 @@ export function requestSignature(req: Request, res: Response, next: NextFunction
   usedNonces.set(nonceKey, now + maxSkew);
   continueToMtls();
 }
-
-declare module 'express-serve-static-core' {
-  interface Request {
-    rawBody?: Buffer;
-  }
-}

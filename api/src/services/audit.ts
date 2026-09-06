@@ -76,7 +76,7 @@ export class AuditService {
           }
           
           totalMatching++;
-        } catch (e) {
+        } catch {
           // Skip malformed lines
           continue;
         }

@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'api/**'
+      - 'contracts/**'
       - '.github/workflows/corruption-visibility.yml'
   push:
     branches: [main]
     paths:
       - 'api/**'
+      - 'contracts/**'
       - '.github/workflows/corruption-visibility.yml'
   workflow_dispatch:
 
@@ -31,6 +33,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -39,7 +43,88 @@ jobs:
           cache-dependency-path: api/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Build
         run: npm run build
-      - name: Test
-        run: npm test -- --run
+      - name: Test unit and API suites
+        run: >-
+          npm test -- --run
+          --exclude test/chain-integration.test.ts
+          --exclude test/emergency.test.ts
+          --exclude test/availability.test.ts
+
+  integration:
+    name: Gateway against deployed contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Start local chain
+        run: |
+          anvil --host 127.0.0.1 --port 8545 --chain-id 31337 --silent &
+          for _ in $(seq 1 30); do
+            if cast block-number --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+              echo "anvil is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "anvil failed to start"; exit 1
+
+      - name: Deploy contracts
+        working-directory: contracts
+        env:
+          DEPLOYER_PRIVATE_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+        run: |
+          forge script script/DeployDigitalEuro.s.sol:DeployLabEnvironment \
+            --rpc-url http://127.0.0.1:8545 \
+            --broadcast \
+            --silent
+          RUN_FILE=broadcast/DeployDigitalEuro.s.sol/31337/run-latest.json
+          addr() { jq -r --arg n "$1" \
+            '[.transactions[] | select(.transactionType=="CREATE" and .contractName==$n)][0].contractAddress' \
+            "$RUN_FILE"; }
+          {
+            echo "CONTRACT_PERMISSIONING=$(addr Permissioning)"
+            echo "CONTRACT_WALLET_REGISTRY=$(addr WalletRegistry)"
+            echo "CONTRACT_TOKENIZED_EURO=$(addr TokenizedEuro)"
+            echo "CONTRACT_CONDITIONAL_PAYMENTS=$(addr ConditionalPayments)"
+          } >> "$GITHUB_ENV"
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Run and validate integration tests
+        working-directory: api
+        env:
+          TEUR_INTEGRATION_RPC_URL: http://127.0.0.1:8545
+          TEUR_INTEGRATION_DEPLOYER_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+        run: |
+          set +e
+          OUTPUT=$(npm test -- --run test/chain-integration.test.ts 2>&1)
+          STATUS=$?
+          set -e
+
+          echo "$OUTPUT"
+
+          if echo "$OUTPUT" | grep -qiE "[1-9][0-9]* skipped|no test files found"; then
+            echo "::error::Integration suite did not run - check RPC URL and contract addresses"
+            exit 1
+          fi
+
+          exit "$STATUS"
