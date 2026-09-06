@@ -80,7 +80,7 @@ export class FraudService {
         try {
           const alert = JSON.parse(line) as FraudAlert;
           if (alert.id === id) return alert;
-        } catch (e) {
+        } catch {
           // OWASP: Security Logging and Monitoring - Log file corruption
           logger.error('FRAUD_SERVICE', 'FILE_OPERATION_FAILED', {
             path: this.alertsLog,
@@ -133,7 +133,7 @@ export class FraudService {
             });
           }
           outStream.write(JSON.stringify(alert) + '\n');
-        } catch (e) {
+        } catch {
           outStream.write(line + '\n');
         }
       }

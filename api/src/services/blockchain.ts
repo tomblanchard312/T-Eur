@@ -1,86 +1,22 @@
-import { ethers, Contract, JsonRpcProvider, Wallet } from 'ethers';
+import { ethers, Contract, JsonRpcProvider } from 'ethers';
 import crypto from 'crypto';
 import { config } from '../config/index.js';
 import { parameters } from '../config/parameters.js';
 import { logger, logAuditEvent } from '../utils/logger.js';
 import { BlockchainError } from '../middleware/errors.js';
+import {
+  WalletRegistryABI,
+  TokenizedEuroABI,
+  ConditionalPaymentsABI,
+  PermissioningABI,
+  WalletType,
+  ConditionType,
+  PaymentStatus,
+} from './abi.js';
+import { createSigner, type ManagedSigner } from './signer.js';
 
-// Contract ABIs (minimal interfaces for API operations)
-const WalletRegistryABI = [
-  'function registerWallet(address wallet, uint8 walletType, address linkedBank, bytes32 kycHash) external',
-  'function deactivateWallet(address wallet) external',
-  'function reactivateWallet(address wallet) external',
-  'function updateLinkedBank(address wallet, address newBank) external',
-  'function getWalletInfo(address wallet) external view returns (tuple(uint8 walletType, bool isActive, address linkedBank, bytes32 kycHash, uint256 registeredAt))',
-  'function getHoldingLimit(address wallet) external view returns (uint256)',
-  'function isRegistered(address wallet) external view returns (bool)',
-  'event WalletRegistered(address indexed wallet, uint8 indexed walletType, address indexed linkedBank)',
-  'event WalletDeactivated(address indexed wallet)',
-  'event WalletReactivated(address indexed wallet)',
-];
+export { WalletType, ConditionType, PaymentStatus };
 
-const TokenizedEuroABI = [
-  'function mint(address to, uint256 amount, string justification, bytes32 idempotencyKey) external',
-  'function burn(address from, uint256 amount, bytes32 idempotencyKey) external',
-  'function transfer(address to, uint256 amount) external returns (bool)',
-  'function transferFrom(address from, address to, uint256 amount) external returns (bool)',
-  'function approve(address spender, uint256 amount) external returns (bool)',
-  'function balanceOf(address account) external view returns (uint256)',
-  'function totalSupply() external view returns (uint256)',
-  'function executeWaterfall(address wallet) external',
-  'function executeReverseWaterfall(address wallet, uint256 amount) external',
-  'function pause() external',
-  'function unpause() external',
-  'function paused() external view returns (bool)',
-  'function freezeAccount(address account, string reason) external',
-  'function unfreezeAccount(address account) external',
-  'function escrowFunds(address account, uint256 amount, string legalBasis, uint256 expiry) external',
-  'function releaseEscrowedFunds(address account, address to) external',
-  'function burnEscrowedFunds(address account) external',
-  'function frozenAccounts(address account) external view returns (bool)',
-  'function escrowedBalances(address account) external view returns (tuple(uint256 amount, string legalBasis, uint256 expiry))',
-  'function escrowTotals(address account) external view returns (uint256)',
-  'event Transfer(address indexed from, address indexed to, uint256 value)',
-  'event WaterfallExecuted(address indexed wallet, uint256 excessAmount, address indexed linkedBank)',
-  'event ReverseWaterfallExecuted(address indexed wallet, uint256 amount, address indexed linkedBank)',
-  'event AccountFrozen(address indexed account, address indexed by, string reason)',
-  'event AccountUnfrozen(address indexed account, address indexed by)',
-  'event FundsEscrowed(address indexed account, uint256 amount, string legalBasis, uint256 expiry)',
-  'event FundsReleased(address indexed account, uint256 amount, address indexed to)',
-  'event FundsBurnedFromEscrow(address indexed account, uint256 amount)',
-];
-
-const ConditionalPaymentsABI = [
-  'function createConditionalPayment(address payee, uint256 amount, uint8 conditionType, bytes32 conditionData, uint256 expiresAt, address arbiter) external returns (bytes32)',
-  'function confirmDelivery(bytes32 paymentId, bytes32 proof) external',
-  'function releasePayment(bytes32 paymentId, bytes32 proof) external',
-  'function cancelPayment(bytes32 paymentId) external',
-  'function disputePayment(bytes32 paymentId) external',
-  'function resolveDispute(bytes32 paymentId, bool releaseToPayee) external',
-  'function getPayment(bytes32 paymentId) external view returns (tuple(address payer, address payee, uint256 amount, uint8 conditionType, bytes32 conditionData, uint8 status, uint256 createdAt, uint256 expiresAt, address arbiter, bool payerConfirmed, bool payeeConfirmed))',
-  'event PaymentCreated(bytes32 indexed paymentId, address indexed payer, address indexed payee, uint256 amount)',
-  'event PaymentReleased(bytes32 indexed paymentId)',
-  'event PaymentCancelled(bytes32 indexed paymentId)',
-  'event PaymentDisputed(bytes32 indexed paymentId)',
-  'event DisputeResolved(bytes32 indexed paymentId, bool releasedToPayee)',
-];
-
-const PermissioningABI = [
-  'function grantRole(bytes32 role, address account) external',
-  'function revokeRole(bytes32 role, address account) external',
-  'function hasRole(bytes32 role, address account) external view returns (bool)',
-  'function getRoleAdmin(bytes32 role) external view returns (bytes32)',
-  'function isECB(address account) external view returns (bool)',
-  'function isStateBank(address account) external view returns (bool)',
-  'function isLocalBank(address account) external view returns (bool)',
-  'function isPSP(address account) external view returns (bool)',
-  'function isMerchant(address account) external view returns (bool)',
-  'function isWalletHolder(address account) external view returns (bool)',
-  'event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)',
-  'event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)',
-];
-
-// Role constants
 export const ROLES = {
   DEFAULT_ADMIN_ROLE: ethers.ZeroHash,
   MINTER_ROLE: ethers.keccak256(ethers.toUtf8Bytes('MINTER_ROLE')),
@@ -98,56 +34,35 @@ export const ROLES = {
   WALLET_HOLDER_ROLE: ethers.keccak256(ethers.toUtf8Bytes('WALLET_HOLDER_ROLE')),
 } as const;
 
-// Wallet type enum matching contract
-export enum WalletType {
-  INDIVIDUAL = 0,
-  MERCHANT = 1,
-  PSP = 2,
-  NCB = 3,
-  BANK = 4,
-}
-
-// Payment status enum
-export enum PaymentStatus {
-  PENDING = 0,
-  RELEASED = 1,
-  CANCELLED = 2,
-  EXPIRED = 3,
-  DISPUTED = 4,
-}
-
-// Condition type enum
-export enum ConditionType {
-  DELIVERY = 0,
-  TIME_LOCK = 1,
-  MILESTONE = 2,
-  ORACLE = 3,
-  MULTI_SIG = 4,
-}
-
 // Lightweight numeric wrapper for returned big values
 type EBig = { toString(): string; toNumber?: () => number };
 
+/**
+ * Mirrors IWalletRegistry.WalletInfo. Field order matches the struct exactly;
+ * ethers decodes tuples positionally, so a reordering here silently yields
+ * wrong values rather than an error.
+ */
 type WalletInfo = {
   walletType: number | EBig;
+  linkedBankAccount: string;
+  customLimit: EBig;
+  registrationTime: EBig;
   isActive: boolean;
-  linkedBank: string;
   kycHash: string;
-  registeredAt: EBig;
 };
 
+/** Mirrors IConditionalPayments.ConditionalPayment. */
 type PaymentInfo = {
+  paymentId: string;
   payer: string;
   payee: string;
   amount: EBig;
   conditionType: number | EBig;
   conditionData: string;
-  status: number | EBig;
   createdAt: EBig;
   expiresAt: EBig;
+  status: number | EBig;
   arbiter: string;
-  payerConfirmed: boolean;
-  payeeConfirmed: boolean;
 };
 
 /**
@@ -164,75 +79,80 @@ type PaymentInfo = {
  */
 class BlockchainService {
   private provider: JsonRpcProvider;
-  private signer: Wallet;
-  private _walletRegistry: Contract;
-  private _tokenizedEuro: Contract;
-  private _conditionalPayments: Contract;
-  private _permissioning: Contract;
+  private managedSigner?: ManagedSigner;
+  private operatorAddress = '';
+  private contracts?: {
+    walletRegistry: Contract;
+    tokenizedEuro: Contract;
+    conditionalPayments: Contract;
+    permissioning: Contract;
+  };
   private initialized = false;
 
   constructor() {
     this.provider = new JsonRpcProvider(config.blockchain.rpcUrl);
-    this.signer = new Wallet(config.blockchain.operatorPrivateKey, this.provider);
-    
-    if (!config.contracts.walletRegistry) {
-      throw new Error('CONTRACT_WALLET_REGISTRY not configured');
-    }
-    if (!config.contracts.tokenizedEuro) {
-      throw new Error('CONTRACT_TOKENIZED_EURO not configured');
-    }
-    if (!config.contracts.conditionalPayments) {
-      throw new Error('CONTRACT_CONDITIONAL_PAYMENTS not configured');
-    }
-    if (!config.contracts.permissioning) {
-      throw new Error('CONTRACT_PERMISSIONING not configured');
-    }
-    
-    this._walletRegistry = new Contract(
-      config.contracts.walletRegistry,
-      WalletRegistryABI,
-      this.signer
-    );
-    
-    this._tokenizedEuro = new Contract(
-      config.contracts.tokenizedEuro,
-      TokenizedEuroABI,
-      this.signer
-    );
-    
-    this._conditionalPayments = new Contract(
-      config.contracts.conditionalPayments,
-      ConditionalPaymentsABI,
-      this.signer
-    );
-    
-    this._permissioning = new Contract(
-      config.contracts.permissioning,
-      PermissioningABI,
-      this.signer
-    );
   }
+
+  /**
+   * Contracts are bound during initialize() rather than in the constructor
+   * because signer creation is asynchronous under the KMS backend.
+   */
+  private bound() {
+    if (!this.contracts) {
+      throw new BlockchainError('Blockchain service has not been initialized');
+    }
+    return this.contracts;
+  }
+
+  private get _walletRegistry(): Contract { return this.bound().walletRegistry; }
+  private get _tokenizedEuro(): Contract { return this.bound().tokenizedEuro; }
+  private get _conditionalPayments(): Contract { return this.bound().conditionalPayments; }
+  private get _permissioning(): Contract { return this.bound().permissioning; }
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
     try {
+      this.managedSigner = await createSigner(this.provider, {
+        backend: config.blockchain.signerBackend,
+        privateKey: config.blockchain.operatorPrivateKey,
+        kmsKeyId: config.blockchain.kmsKeyId,
+        permitsLocalKeys: config.nodeEnv === 'development' || config.nodeEnv === 'test',
+      });
+      this.operatorAddress = await this.managedSigner.getAddress();
+
+      const signer = this.managedSigner.signer;
+      this.contracts = {
+        walletRegistry: new Contract(config.contracts.walletRegistry, WalletRegistryABI, signer),
+        tokenizedEuro: new Contract(config.contracts.tokenizedEuro, TokenizedEuroABI, signer),
+        conditionalPayments: new Contract(config.contracts.conditionalPayments, ConditionalPaymentsABI, signer),
+        permissioning: new Contract(config.contracts.permissioning, PermissioningABI, signer),
+      };
+
       const network = await this.provider.getNetwork();
       const blockNumber = await this.provider.getBlockNumber();
-      
+
+      if (network.chainId !== BigInt(config.blockchain.chainId)) {
+        throw new BlockchainError(
+          `Connected chain ${network.chainId} does not match configured chain ${config.blockchain.chainId}`,
+        );
+      }
+
       // OWASP: Security Logging and Monitoring - Log service startup
       logger.info('BLOCKCHAIN_SERVICE', 'RESOURCE_CREATED', {
         chainId: network.chainId.toString(),
         blockNumber,
-        // Sanitized: only log address, not private key
-        resourceId: this.signer.address,
+        // Sanitized: only log address, never key material
+        resourceId: this.operatorAddress,
       });
 
       this.initialized = true;
     } catch (error) {
-      logger.error('BLOCKCHAIN_SERVICE', 'INTERNAL_SERVER_ERROR', { 
-        errorCode: String(error) 
+      logger.error('BLOCKCHAIN_SERVICE', 'INTERNAL_SERVER_ERROR', {
+        errorCode: 'BLOCKCHAIN_INIT_FAILED',
+        details: { errorType: error instanceof Error ? error.name : 'unknown' },
       });
+      if (error instanceof BlockchainError) throw error;
       throw new BlockchainError('Failed to connect to blockchain');
     }
   }
@@ -291,6 +211,17 @@ class BlockchainService {
     return await func(role, account) as boolean;
   }
 
+  /**
+   * Contract idempotency parameters are bytes32, but the API accepts UUIDs.
+   * A UUID is not valid bytes32 and ethers rejects it at encode time, so it is
+   * hashed. Values already in bytes32 form are passed through unchanged, which
+   * keeps the mapping stable and collision-free for both input shapes.
+   */
+  private _toBytes32Key(key: string): string {
+    if (/^0x[a-fA-F0-9]{64}$/.test(key)) return key;
+    return ethers.keccak256(ethers.toUtf8Bytes(key));
+  }
+
   private _toNumber(value: number | EBig): number {
     if (typeof value === 'number') return value;
     if (value && typeof value.toNumber === 'function') return value.toNumber();
@@ -332,8 +263,21 @@ class BlockchainService {
       const overrides: { gasLimit?: bigint } = {};
       if (options.gasLimit) overrides.gasLimit = options.gasLimit;
 
-      const tx = await func(...args, overrides);
-      const receipt = await tx.wait();
+      // Serialise submission so concurrent requests cannot claim the same
+      // operator nonce. On failure the local nonce is re-synced from the chain,
+      // otherwise one rejected send would strand every later transaction.
+      const signer = this.managedSigner;
+      if (!signer) throw new BlockchainError('Blockchain service has not been initialized');
+
+      const receipt = await signer.runExclusive(async () => {
+        try {
+          const tx = await func(...args, overrides);
+          return await tx.wait(config.blockchain.confirmations);
+        } catch (sendError) {
+          signer.reset();
+          throw sendError;
+        }
+      });
 
       if (!receipt) {
         throw new BlockchainError('Transaction receipt is null');
@@ -462,11 +406,11 @@ class BlockchainService {
     );
   }
 
-  async deactivateWallet(wallet: string, correlationId?: string, userId?: string) {
+  async deactivateWallet(wallet: string, reason: string, correlationId?: string, userId?: string) {
     return this.executeTransaction(
       this._walletRegistry,
       'deactivateWallet',
-      [wallet],
+      [wallet, reason],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
@@ -491,7 +435,7 @@ class BlockchainService {
   async updateLinkedBank(wallet: string, newBank: string, correlationId?: string, userId?: string) {
     return this.executeTransaction(
       this._walletRegistry,
-      'updateLinkedBank',
+      'updateLinkedBankAccount',
       [wallet, newBank],
       {
         ...(correlationId && { correlationId }),
@@ -507,7 +451,7 @@ class BlockchainService {
       
       // Financial System Safety: Validate schema of contract return data.
       // Prevents "Unexpected schema evolution" from causing silent data corruption.
-      if (!info || typeof info.isActive !== 'boolean' || !info.linkedBank || !info.kycHash) {
+      if (!info || typeof info.isActive !== 'boolean' || !info.linkedBankAccount || !info.kycHash) {
         throw new Error('Invalid wallet info returned from contract');
       }
 
@@ -515,9 +459,10 @@ class BlockchainService {
         walletType: this._toNumber(info.walletType),
         walletTypeName: WalletType[this._toNumber(info.walletType)] || 'UNKNOWN',
         isActive: info.isActive,
-        linkedBank: info.linkedBank,
+        linkedBank: info.linkedBankAccount,
+        customLimit: info.customLimit.toString(),
         kycHash: info.kycHash,
-        registeredAt: new Date(this._toNumber(info.registeredAt) * 1000).toISOString(),
+        registeredAt: new Date(this._toNumber(info.registrationTime) * 1000).toISOString(),
       };
     } catch (error) {
       throw new BlockchainError('Failed to get wallet info', error);
@@ -550,21 +495,34 @@ class BlockchainService {
       const info = await this._callWalletRegistryGetWalletInfo(wallet);
       const type = this._toNumber(info.walletType);
       return type === WalletType.PSP || type === WalletType.BANK;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
 
   // ============ Token Operations ============
 
+  /**
+   * `justification` is recorded in the audit trail only. The on-chain mint
+   * takes no justification argument, so it must not be passed to the contract.
+   */
   async mint(to: string, amount: bigint, justification: string, idempotencyKey: string, correlationId?: string, userId?: string) {
     // ECB Alignment: Holding limits enforcement at gateway
     await this.validateHoldingLimit(to, amount);
 
+    await logAuditEvent({
+      action: 'TOKENS_MINTED',
+      actor: userId || 'system',
+      resource: 'token',
+      resourceId: to,
+      details: { justification, amount: amount.toString(), idempotencyKey },
+      result: 'success',
+    });
+
     return this.executeTransaction(
       this._tokenizedEuro,
       'mint',
-      [to, amount, justification, idempotencyKey],
+      [to, amount, this._toBytes32Key(idempotencyKey)],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
@@ -577,7 +535,7 @@ class BlockchainService {
     return this.executeTransaction(
       this._tokenizedEuro,
       'burn',
-      [from, amount, idempotencyKey],
+      [from, amount, this._toBytes32Key(idempotencyKey)],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
@@ -586,20 +544,37 @@ class BlockchainService {
     );
   }
 
-  async transfer(to: string, amount: bigint, correlationId?: string, userId?: string) {
+  /**
+   * Moves tokens between two wallets on behalf of the payer.
+   *
+   * This uses transferFrom, not transfer. The operator is not the owner of the
+   * funds, so it must spend against an allowance the payer has granted it.
+   * Using transfer here would debit the operator's own balance while the audit
+   * record claimed a payer-to-payee movement, so an unfunded allowance must
+   * fail loudly rather than silently spending gateway funds.
+   */
+  async transfer(from: string, to: string, amount: bigint, correlationId?: string, userId?: string) {
     // ECB Alignment: Holding limits enforcement at gateway
     await this.validateHoldingLimit(to, amount);
 
     return this.executeTransaction(
       this._tokenizedEuro,
-      'transfer',
-      [to, amount],
+      'transferFrom',
+      [from, to, amount],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
         operation: 'TRANSFER_TOKENS'
       }
     );
+  }
+
+  /** Allowance the payer has granted the gateway operator. */
+  async allowanceForOperator(owner: string): Promise<bigint> {
+    const func = this._tokenizedEuro.getFunction('allowance');
+    if (!func) throw new BlockchainError('Contract method allowance not available');
+    const result = await func(owner, this.operatorAddress);
+    return BigInt(result.toString());
   }
 
   // ============ Sovereign Monetary Controls ============
@@ -746,14 +721,25 @@ class BlockchainService {
       // If no custom limit, use default based on wallet type
       if (limit === BigInt(0)) {
         const walletType = Number(info.walletType);
-        if (walletType === WalletType.INDIVIDUAL) {
-          limit = BigInt(parameters.holding_limit_individual);
-        } else if (walletType === WalletType.MERCHANT) {
-          limit = BigInt(parameters.holding_limit_merchant);
-        } else {
-          // PSPs and Banks typically don't have holding limits in the same way, 
-          // or they are much higher. For now, we allow them.
-          return;
+        switch (walletType) {
+          case WalletType.INDIVIDUAL:
+            limit = BigInt(parameters.holding_limit_individual);
+            break;
+          case WalletType.MERCHANT:
+            limit = BigInt(parameters.holding_limit_merchant);
+            break;
+          case WalletType.PSP:
+          case WalletType.NCB:
+          case WalletType.BANK:
+            // Supervised intermediaries hold balances on behalf of others and
+            // are not subject to the scheme's per-holder cap.
+            return;
+          default:
+            // UNREGISTERED, or an ordinal this build does not know about.
+            // Deny rather than fall through to an unbounded limit.
+            throw new BlockchainError(
+              `Recipient wallet is not registered for holding tEUR (wallet type ${walletType})`,
+            );
         }
       }
 
@@ -803,11 +789,11 @@ class BlockchainService {
     );
   }
 
-  async executeReverseWaterfall(wallet: string, amount: bigint, correlationId?: string, userId?: string) {
+  async executeReverseWaterfall(wallet: string, amount: bigint, idempotencyKey: string, correlationId?: string, userId?: string) {
     return this.executeTransaction(
       this._tokenizedEuro,
       'executeReverseWaterfall',
-      [wallet, amount],
+      [wallet, amount, this._toBytes32Key(idempotencyKey)],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
@@ -849,13 +835,14 @@ class BlockchainService {
     conditionData: string,
     expiresAt: number,
     arbiter: string,
+    idempotencyKey: string,
     correlationId?: string,
     userId?: string
   ): Promise<{ txHash: string; blockNumber: number; paymentId: string }> {
     const { txHash, blockNumber, receipt } = await this.executeTransaction(
       this._conditionalPayments,
       'createConditionalPayment',
-      [payee, amount, conditionType, conditionData, expiresAt, arbiter],
+      [payee, amount, conditionType, conditionData, expiresAt, arbiter, this._toBytes32Key(idempotencyKey)],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
@@ -863,7 +850,7 @@ class BlockchainService {
       }
     );
 
-    // Extract payment ID from PaymentCreated event
+    // Extract payment ID from the ConditionalPaymentCreated event
     const event = receipt.logs
       .map(log => {
         try {
@@ -872,10 +859,10 @@ class BlockchainService {
           return null;
         }
       })
-      .find(parsed => parsed && parsed.name === 'PaymentCreated');
+      .find(parsed => parsed && parsed.name === 'ConditionalPaymentCreated');
 
     if (!event) {
-      throw new BlockchainError('PaymentCreated event not found in transaction receipt');
+      throw new BlockchainError('ConditionalPaymentCreated event not found in transaction receipt');
     }
 
     const paymentId = event.args.paymentId as string;
@@ -913,24 +900,41 @@ class BlockchainService {
     );
   }
 
-  async cancelPayment(paymentId: string, correlationId?: string, userId?: string) {
+  /**
+   * The contract exposes refundPayment, not cancelPayment. Both take a reason
+   * string that is emitted with PaymentRefunded for the audit trail.
+   */
+  async refundPayment(paymentId: string, reason: string, correlationId?: string, userId?: string) {
     return this.executeTransaction(
       this._conditionalPayments,
-      'cancelPayment',
-      [paymentId],
+      'refundPayment',
+      [paymentId, reason],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
-        operation: 'CANCEL_PAYMENT'
+        operation: 'REFUND_PAYMENT'
       }
     );
   }
 
-  async disputePayment(paymentId: string, correlationId?: string, userId?: string) {
+  async claimExpiredPayment(paymentId: string, correlationId?: string, userId?: string) {
+    return this.executeTransaction(
+      this._conditionalPayments,
+      'claimExpiredPayment',
+      [paymentId],
+      {
+        ...(correlationId && { correlationId }),
+        ...(userId && { userId }),
+        operation: 'CLAIM_EXPIRED_PAYMENT'
+      }
+    );
+  }
+
+  async disputePayment(paymentId: string, reason: string, correlationId?: string, userId?: string) {
     return this.executeTransaction(
       this._conditionalPayments,
       'disputePayment',
-      [paymentId],
+      [paymentId, reason],
       {
         ...(correlationId && { correlationId }),
         ...(userId && { userId }),
@@ -967,8 +971,6 @@ class BlockchainService {
         createdAt: new Date(Number(payment.createdAt) * 1000).toISOString(),
         expiresAt: new Date(Number(payment.expiresAt) * 1000).toISOString(),
         arbiter: payment.arbiter,
-        payerConfirmed: payment.payerConfirmed,
-        payeeConfirmed: payment.payeeConfirmed,
       };
     } catch (error) {
       throw new BlockchainError('Failed to get payment info', error);
@@ -1014,7 +1016,7 @@ class BlockchainService {
   // ============ Utility ============
 
   getOperatorAddress(): string {
-    return this.signer.address;
+    return this.operatorAddress;
   }
 
   async getBlockNumber(): Promise<number> {

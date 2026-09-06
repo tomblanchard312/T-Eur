@@ -157,7 +157,7 @@ export function isoToRestRequest(isoMessage: Buffer): { operation: string; reque
     const correlationId = fields[11] || 'unknown';
 
     return { operation, request, correlationId };
-  } catch (err) {
+  } catch {
     return { error: 'Failed to parse ISO message' };
   }
 }
@@ -198,7 +198,7 @@ export function restToIsoResponse(operation: string, response: any, correlationI
     }
 
     return iso.getMessage();
-  } catch (err) {
+  } catch {
     return { error: 'Failed to build ISO message' };
   }
 }

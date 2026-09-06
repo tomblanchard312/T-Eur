@@ -177,7 +177,7 @@ router.post(
     const correlationId = generateCorrelationId('deactivate-wallet');
     const userId = req.auth!.institutionId;
     
-    const result = await blockchainService.deactivateWallet(wallet, correlationId, userId);
+    const result = await blockchainService.deactivateWallet(wallet, reason, correlationId, userId);
 
     logAuditEvent({
       action: 'WALLET_DEACTIVATED',

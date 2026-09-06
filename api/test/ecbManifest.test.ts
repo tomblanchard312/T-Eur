@@ -99,7 +99,7 @@ test('signs manifest when signer provided', async () => {
   await fs.promises.writeFile(path.join(mirrorDir, 'EXR.jsonl'), validData);
 
   const signer = new LocalSigner();
-  const manifest = await generateDailyManifest({
+  await generateDailyManifest({
     mirrorDir,
     dateUtc: '2023-01-01',
     manifestDir: path.join(tempDir, 'manifests'),
@@ -405,7 +405,7 @@ test('regression: ensures silent continues are impossible - every rejection logg
 
   // Every rejected record must emit exactly one structured log event
   // Filter log calls to rejection events only
-  const rejectionLogCalls = logSpy.mock.calls.filter(([level, event]) =>
+  const rejectionLogCalls = logSpy.mock.calls.filter(([_level, event]) =>
     event.startsWith('MANIFEST_RECORD_') && event !== 'MANIFEST_PROCESSING_SUMMARY'
   );
 
@@ -413,7 +413,7 @@ test('regression: ensures silent continues are impossible - every rejection logg
   expect(rejectionLogCalls).toHaveLength(6);
 
   // Verify each rejection event type is correct
-  const events = rejectionLogCalls.map(([level, event]) => event);
+  const events = rejectionLogCalls.map(([_level, event]) => event);
   expect(events).toContain('MANIFEST_RECORD_INVALID_JSON');
   expect(events).toContain('MANIFEST_RECORD_MISSING_RETRIEVED_TIMESTAMP');
   expect(events).toContain('MANIFEST_RECORD_INVALID_TIMESTAMP');

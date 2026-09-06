@@ -237,7 +237,7 @@ export async function generateDailyManifest(opts: {
       await fs.promises.writeFile(diagnosticsPath, diagLines, { encoding: 'utf8', mode: 0o444 });
       ingestLogger.log('info', 'MANIFEST_DIAGNOSTICS_WRITTEN', { diagnostics_path: diagnosticsPath, diagnostics_count: diagnostics.length });
     }
-    catch (e) {
+    catch {
       // structured log but do not fail for diagnostics write issues
       ingestLogger.log('error', 'MANIFEST_DIAGNOSTICS_WRITE_FAILED', { error_category: 'io_error', retryable: false });
     }
@@ -311,7 +311,7 @@ export async function generateDailyManifest(opts: {
   try {
     await fs.promises.chmod(manifestPath, 0o444);
   }
-  catch (e) {
+  catch {
     // ignore
   }
 
